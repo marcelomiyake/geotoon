@@ -46,7 +46,8 @@ make kind-up images kind-load deploy open
 Then open <http://localhost:8080>, type an address (for example
 `Av. Bolonha, 200, São Paulo`) and pick a suggestion. You can also type coordinates as
 `lat, lon`. Click **Click to walk**: the mouse looks around, W A S D or the arrow keys
-move, Shift runs, Q and E turn, Esc pauses.
+move at about 22 km/h (bicycle speed), Shift moves at about 54 km/h (car speed), Q and E
+turn, Esc pauses.
 
 To reach the app on <http://localhost:8090> through the Kind port mapping instead of
 `make open`, install with `-f deploy/helm/geotoon/values-kind.yaml`.
