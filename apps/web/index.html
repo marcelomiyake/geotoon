@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Walk a cel-shaded 3D map of any address, built from open map data." />
+    <title>GeoToon</title>
+  </head>
+  <body>
+    <main id="app" data-screen="search">
+      <div id="canvas-host" aria-hidden="true"></div>
+
+      <section class="panel screen-search" aria-labelledby="search-title">
+        <h1 id="search-title">GeoToon</h1>
+        <p class="lead">Type an address, then walk the streets around it in a cel-shaded 3D map.</p>
+        <label class="sr-only" for="search-input">Address</label>
+        <input id="search-input" type="search" autocomplete="off" spellcheck="false"
+          placeholder="Av. Bolonha, 200, São Paulo — or “lat, lon”" />
+        <ul id="search-list"></ul>
+        <p id="search-status" role="status" aria-live="polite"></p>
+        <p class="credit">
+          Search by <a href="https://photon.komoot.io" target="_blank" rel="noopener noreferrer">Photon</a>
+          using <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> data.
+          Maps from <a href="https://overturemaps.org" target="_blank" rel="noopener noreferrer">Overture Maps Foundation</a>.
+        </p>
+      </section>
+
+      <section class="panel screen-loading" aria-live="polite">
+        <h2 id="loading-text">Loading…</h2>
+        <progress id="loading-bar"></progress>
+        <p id="loading-detail"></p>
+        <button id="loading-cancel-button" type="button" class="secondary">Cancel</button>
+      </section>
+
+      <section class="panel screen-ready">
+        <h2 id="place-label"></h2>
+        <button id="walk-button" type="button">Click to walk</button>
+        <p class="hint">Mouse to look · W A S D or arrows to move · Shift to run · Q / E to turn · Esc to pause</p>
+        <button id="ready-new-address-button" type="button" class="secondary">New address</button>
+      </section>
+
+      <section class="panel screen-paused" aria-labelledby="pause-title">
+        <h2 id="pause-title">Paused</h2>
+        <div class="buttons">
+          <button id="resume-button" type="button">Resume</button>
+          <button id="new-address-button" type="button" class="secondary">New address</button>
+        </div>
+        <h3>Controls</h3>
+        <p class="hint">Mouse to look · W A S D or arrows to move · Shift to run · Q / E to turn · Esc to pause</p>
+        <h3>Map data</h3>
+        <ul class="attribution-list"></ul>
+      </section>
+
+      <section class="panel screen-error" role="alert">
+        <h2 id="error-text"></h2>
+        <p id="error-detail"></p>
+        <div class="buttons">
+          <button id="retry-button" type="button">Retry</button>
+          <button id="error-back-button" type="button" class="secondary">New address</button>
+        </div>
+      </section>
+
+      <p id="edge-notice" hidden>You reached the edge of the loaded area.</p>
+      <div class="crosshair" aria-hidden="true"></div>
+      <p id="corner-attribution"></p>
+      <pre id="debug-panel" hidden></pre>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
