@@ -1,0 +1,19 @@
+{
+  "name": "@geotoon/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GeoToon /api/v1 wire schemas shared by the API and the browser client.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@geotoon/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

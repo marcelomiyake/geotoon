@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "customConditions": ["@geotoon/source"]
+  },
+  "include": ["src", "test", "scripts"]
+}

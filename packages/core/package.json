@@ -1,0 +1,16 @@
+{
+  "name": "@geotoon/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GeoToon domain and application layer (no I/O).",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@geotoon/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"]
+}
