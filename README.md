@@ -6,9 +6,9 @@ for a 2 km radius from Overture Maps into PostGIS, and draws them in the browser
 Three.js in an anime street style: pastel walls with windows, clay-tile roofs, ink
 contours, crisp blue shadows, utility poles and a painted sky.
 
-![Street level: pastel houses with pitched roofs, a dashed centre line and cast shadows](docs/images/street-view.jpg)
+![Driving down a street at car speed (Shift): pastel houses with windows, utility poles and wires, a dashed centre line](docs/images/street-drive.gif)
 
-![From above: the area around Av. Bolonha, 200, São Paulo](docs/images/aerial-view.jpg)
+![Circling above the area around Av. Bolonha, 200, São Paulo](docs/images/aerial-orbit.gif)
 
 The first visit to an area downloads its map data (about 80 s for 2 km); every later
 visit to the same area reads only from PostGIS.
