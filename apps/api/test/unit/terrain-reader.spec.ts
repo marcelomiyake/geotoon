@@ -47,6 +47,30 @@ describe('SRTM terrain adapter', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('attenuates a small elevation spike without exaggerating the landscape', async () => {
+    const raster = new PNG({ width: 256, height: 256 });
+    const x = Math.floor((CENTRE.lon + 180) / 360 * 4096 * 256) % 256;
+    const lat = CENTRE.lat * Math.PI / 180;
+    const y = Math.floor((1 - Math.asinh(Math.tan(lat)) / Math.PI) / 2 * 4096 * 256) % 256;
+    for (let row = 0; row < 256; row += 1) {
+      for (let col = 0; col < 256; col += 1) {
+        const at = (row * 256 + col) * 4;
+        const metres = Math.abs(row - y) <= 2 && Math.abs(col - x) <= 2 ? 900 : 800;
+        raster.data[at] = Math.floor((metres + 32768) / 256);
+        raster.data[at + 1] = (metres + 32768) % 256;
+        raster.data[at + 3] = 255;
+      }
+    }
+    const png = PNG.sync.write(raster);
+    const { reader } = setup(() => Promise.resolve(new Response(Uint8Array.from(png), {
+      headers: { 'x-amz-meta-x-imagery-sources': 'srtm/test.tif' },
+    })));
+    const grid = await reader.readWithin(CENTRE, 500);
+    expect(grid!.datumM).toBeGreaterThan(800);
+    expect(grid!.datumM).toBeLessThan(860);
+    expect(Math.max(...grid!.heights) - Math.min(...grid!.heights)).toBeLessThan(60);
+  });
+
   it('uses a flat fallback beyond Mercator coverage or for uncredited DEM sources', async () => {
     const { reader, query, fetch } = setup();
     expect(await reader.readWithin({ lat: 89, lon: 0 }, 100)).toBeUndefined();

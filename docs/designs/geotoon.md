@@ -453,13 +453,16 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
     with the São Paulo visual profile. Shared coordinates take precedence, and
     New address returns to address search. The original Av. Bolonha PoC fixtures
     remain unchanged so offline tests continue to use their recorded source data.
+    Spawn selection rejects street candidates inside ground-level building footprints
+    and considers clear segment endpoints; courtyards and raised parts remain usable.
 *   **Geographical relief.** `ReadScene` accepts an optional `TerrainReader` port.
     The Postgres adapter reads Mapzen Terrarium PNG rasters from
     `https://s3.amazonaws.com/elevation-tiles-prod/terrarium`, decodes RGB heights
     with `(R * 256 + G + B / 256) - 32768`, and samples a square 50 m grid around
     the area plus a 50 m margin. Raster zoom is at most 12 and decreases at high
     latitudes to keep source sampling near 30–60 m. The terrain grid stores heights
-    relative to the address elevation (`datumM`); it uses natural vertical scale.
+    relative to the smoothed address elevation (`datumM`); a 5×5 sample mean reduces
+    small raster artifacts while retaining broad relief at natural vertical scale.
 
     Migration 0002 creates a separate `terrain_tile` cache keyed by raster z/x/y,
     with PNG bytes and imagery-source metadata. Concurrent reads in one API process

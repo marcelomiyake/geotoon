@@ -5,7 +5,7 @@ import { PNG } from 'pngjs';
 const TILE_SIZE = 256;
 const SPACING_M = 50;
 const MARGIN_M = 50;
-const MERCATOR_LIMIT = 85.051_128_78;
+const MERCATOR_LIMIT = 85.05112878;
 const WORLD_M = 40_075_016.686;
 export const TERRAIN_BASE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium';
 
@@ -62,6 +62,22 @@ function elevation(pixel: Pixel, z: number, rasters: ReadonlyMap<string, Uint8Ar
     + (samples[2]! * (1 - u) + samples[3]! * u) * v;
 }
 
+/** Suppress small raster bumps while retaining the neighbourhood's broader relief. */
+function smoothHeights(values: readonly number[], size: number): number[] {
+  const clamp = (value: number): number => Math.max(0, Math.min(size - 1, value));
+  return values.map((_, i) => {
+    const row = Math.floor(i / size);
+    const col = i % size;
+    let total = 0;
+    for (let dz = -2; dz <= 2; dz += 1) {
+      for (let dx = -2; dx <= 2; dx += 1) {
+        total += values[clamp(row + dz) * size + clamp(col + dx)]!;
+      }
+    }
+    return total / 25;
+  });
+}
+
 /** SRTM terrain from Mapzen, with persistent raster caching independent of Overture tiles. */
 export class PgTerrainReader implements TerrainReader {
   private readonly inflight = new Map<string, Promise<StoredTile>>();
@@ -108,7 +124,7 @@ export class PgTerrainReader implements TerrainReader {
       }
       rasters.set(tileId(tile), decodeTerrainPng(stored.png));
     }
-    const absolute = pixels.map((pixel) => elevation(pixel, z, rasters));
+    const absolute = smoothHeights(pixels.map((pixel) => elevation(pixel, z, rasters)), size);
     const datumM = absolute[Math.floor(size / 2) * size + Math.floor(size / 2)]!;
     return {
       originM: -extent, spacingM: SPACING_M, size, datumM: Math.round(datumM * 100) / 100,

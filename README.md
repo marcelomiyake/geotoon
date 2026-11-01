@@ -10,7 +10,8 @@ The initial view opens at **Av. Paulista, 1578 — MASP, São Paulo**. Choose **
 to explore somewhere else; shared coordinates still override the initial location.
 Where SRTM elevations are available, the landscape has geographical relief: streets,
 parks, buildings, trees and signs follow the terrain, and the walking camera follows
-the slopes. Elevation is shown at its natural scale, sampled on a 50 m grid.
+the slopes. Elevation is shown at its natural scale on a 50 m grid, smoothed over a
+250 m neighbourhood to reduce small raster artifacts.
 
 Address searches also carry the country and city into the visual style. Brazil uses
 plaster/concrete colours, clay and slab roofs, and wider windows with slim frames;
