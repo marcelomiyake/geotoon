@@ -8,7 +8,8 @@ fixtures/overture/
   Contains data © OpenStreetMap contributors, available under the Open Database
   License (ODbL 1.0), https://www.openstreetmap.org/copyright, distributed by the
   Overture Maps Foundation, https://overturemaps.org. Building footprints may also
-  include Google Open Buildings (CC BY 4.0) and Microsoft ML Buildings (ODbL 1.0).
+  include Google Open Buildings (CC BY 4.0) and Microsoft ML Buildings (ODbL 1.0), and
+  street segments may include data from TomTom.
 
 fixtures/photon/
   One response from the Photon geocoder (https://photon.komoot.io), which serves

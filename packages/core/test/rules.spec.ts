@@ -137,6 +137,10 @@ describe('attribution', () => {
     expect(credits).toHaveLength(4);
     expect(credits.map((c) => c.url)).toContain('https://sites.research.google/gr/open-buildings/');
   });
+
+  it('credits TomTom when street segments come from it', () => {
+    expect(attributionFor(['TomTom']).map((a) => a.text)).toContain('Data from TomTom.');
+  });
 });
 
 describe('feature kinds', () => {

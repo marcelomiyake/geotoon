@@ -14,7 +14,7 @@ const OVERTURE: Attribution = {
 };
 const DATASET_CREDITS: Readonly<Record<string, Attribution>> = {
   'Google Open Buildings': {
-    text: 'Google Open Buildings (CC BY 4.0)',
+    text: 'Google Open Buildings. Available under CC BY 4.0.',
     url: 'https://sites.research.google/gr/open-buildings/',
   },
   'Microsoft ML Buildings': {
@@ -22,12 +22,16 @@ const DATASET_CREDITS: Readonly<Record<string, Attribution>> = {
     url: 'https://github.com/microsoft/GlobalMLBuildingFootprints',
   },
   'Esri Community Maps': {
-    text: 'Esri Community Maps contributors (CC BY 4.0)',
+    text: 'Esri Community Maps contributors. Available under CC BY 4.0.',
     url: 'https://communitymaps.arcgis.com',
+  },
+  TomTom: {
+    text: 'Data from TomTom.',
+    url: 'https://www.tomtom.com',
   },
 };
 
-/** OSM and Overture are always credited; other building sources only when present. */
+/** OSM and Overture are always credited; other building and street sources only when present. */
 export function attributionFor(datasets: Iterable<string>): Attribution[] {
   const credits: Attribution[] = [OSM, OVERTURE];
   for (const dataset of new Set(datasets)) {
