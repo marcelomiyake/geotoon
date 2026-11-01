@@ -18,6 +18,7 @@ coverage/
 kubeconfig*
 
 # Editors and OS
+.claude/settings.local.json
 .idea/
 .vscode/
 .DS_Store
