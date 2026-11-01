@@ -5,8 +5,8 @@
 set -euo pipefail
 
 BASE_URL=${1:-http://localhost:8080}
-LAT=${2:--23.5485817}
-LON=${3:--46.7469144}
+LAT=${2:--23.561496}
+LON=${3:--46.655968}
 BODY="{\"lat\":${LAT},\"lon\":${LON}}"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT

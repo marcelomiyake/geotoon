@@ -5,17 +5,20 @@ import { multiPolygonAreaM2, sampleLine } from '../domain/geometry.js';
 import { estimateHeight } from '../domain/height-rule.js';
 import type { Scene, SceneBuilding } from '../domain/scene.js';
 import { chooseSpawn } from '../domain/spawn-point.js';
-import type { FeatureReader } from './ports.js';
+import type { FeatureReader, TerrainReader } from './ports.js';
 
 /** Spacing of trees along a mapped tree row, in metres. */
 export const TREE_ROW_SPACING_M = 6;
 
 /** Reads the stored features of an area and applies the domain rules that shape the scene. */
 export class ReadScene {
-  constructor(private readonly reader: FeatureReader) {}
+  constructor(private readonly reader: FeatureReader, private readonly terrainReader?: TerrainReader) {}
 
   async execute(centre: GeoPoint, radiusM: number): Promise<Scene> {
-    const stored = await this.reader.readWithin(centre, radiusM);
+    const [stored, terrain] = await Promise.all([
+      this.reader.readWithin(centre, radiusM),
+      this.terrainReader?.readWithin(centre, radiusM),
+    ]);
     const buildings: SceneBuilding[] = stored.buildings.map((building) => {
       const height = estimateHeight({
         id: building.id,
@@ -41,7 +44,8 @@ export class ReadScene {
       areas: stored.areas,
       trees: stored.trees.flatMap(treePositions),
       spawn: chooseSpawn(centre, stored.lines, stored.buildings),
-      attribution: attributionFor(stored.datasets),
+      attribution: attributionFor(terrain === undefined ? stored.datasets : [...stored.datasets, 'SRTM terrain']),
+      ...(terrain === undefined ? {} : { terrain }),
     };
   }
 }

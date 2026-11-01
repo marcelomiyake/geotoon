@@ -97,8 +97,8 @@ Each goal is a pass/fail check. G1 to G5 are the owner's done criteria.
 ## Non-Goals
 
 *   User accounts, logins and payments.
-*   Data sources beyond Overture and Photon: no Overpass, Cesium OSM
-    Buildings, Google, terrain or elevation data. The ground is flat.
+*   Other building sources: no Overpass, Cesium OSM Buildings or Google imagery.
+    SRTM elevation is now supported through Mapzen Terrain Tiles as described below.
 *   Phones, tablets and touch controls. Desktop browsers with WebGL2 only.
 *   Building interiors, multiplayer, navigation or route-finding, and a
     day-night cycle.
@@ -448,6 +448,43 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
 
 ### Browser client
 
+*   **Initial address.** A visit without shared coordinates opens Av. Paulista,
+    1578 (MASP), São Paulo, at the pinned Photon point `-23.561496, -46.655968`,
+    with the São Paulo visual profile. Shared coordinates take precedence, and
+    New address returns to address search. The original Av. Bolonha PoC fixtures
+    remain unchanged so offline tests continue to use their recorded source data.
+*   **Geographical relief.** `ReadScene` accepts an optional `TerrainReader` port.
+    The Postgres adapter reads Mapzen Terrarium PNG rasters from
+    `https://s3.amazonaws.com/elevation-tiles-prod/terrarium`, decodes RGB heights
+    with `(R * 256 + G + B / 256) - 32768`, and samples a square 50 m grid around
+    the area plus a 50 m margin. Raster zoom is at most 12 and decreases at high
+    latitudes to keep source sampling near 30–60 m. The terrain grid stores heights
+    relative to the address elevation (`datumM`); it uses natural vertical scale.
+
+    Migration 0002 creates a separate `terrain_tile` cache keyed by raster z/x/y,
+    with PNG bytes and imagery-source metadata. Concurrent reads in one API process
+    share raster fetches; the persisted cache survives process and pod restarts.
+    Raster requests have a 10 s timeout and validate dimensions before PNG decoding.
+    The current implementation accepts SRTM imagery sources only and adds USGS/Mapzen
+    attribution when terrain is present. Unknown sources, missing samples, polar
+    locations outside Web Mercator or source failures retain flat ground. Existing
+    `sourceCalls` counts Overture ingestion, independently of the raster cache.
+
+    The scene contract gains an optional, dimension-checked terrain grid; existing
+    payloads remain valid. The browser's pure `Terrain` module builds a triangulated
+    ground surface and samples the same piecewise planes. Roads, sidewalks, markings,
+    water and land-use polygons are clipped to these terrain triangles, preserving
+    their layer offsets without gaps or buried road faces. Building roofs remain
+    level above the highest sampled footprint corner; walls extend down to the
+    lowest corner, while raised parts retain their clearance. Trees, utility poles,
+    signs and wire anchors use the ground height. Walking controls keep the eye
+    1.7 m above the terrain after horizontal collision and radius checks.
+
+    SRTM approximates landscape relief; bridges, level water surfaces and surveyed
+    building foundations are not reconstructed. Tests use a recorded SRTM raster,
+    synthetic surfaces and a disabled terrain reader in the existing Overture flow;
+    no test contacts the elevation service. The cache has a restart persistence test.
+
 *   **Search.** An ARIA combobox: 300 ms debounce, at least 3 characters,
     each keystroke cancels the previous request (AbortController), at most
     5 suggestions. It also accepts a pasted "lat, lon", and `?lat=&lon=` in
@@ -658,7 +695,7 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
     *   wgpu or Bevy for the web costs much more to build than Three.js.
     *   Floating origins, CDLOD terrain and navmesh solve planet-scale
         problems this PoC does not have: a 2 km scene works with 32-bit
-        floats, there is no terrain source, and no goal needs pathfinding.
+        floats, a small regular elevation grid suffices, and no goal needs pathfinding.
 *   **Reason for Rejection**: The owner chose TypeScript and Three.js, with
     Rust only where it measurably helps. The estimates show no hot spot
     (about 108k footprint vertices at 2 km).
@@ -825,9 +862,9 @@ The owner kept the draft's version of each of these items from
 
 *   **Fresher OSM data**: a self-hosted Overpass instance or OSM diffs,
     behind the same `MapDataSource` port.
-*   **Terrain**: an elevation source (for example Copernicus GLO-30) to
-    replace the flat ground. `groundHeightAt(x, z)` is the single place to
-    change.
+*   **Terrain improvements**: support additional DEM sources with their respective
+    attribution, surveyed bridge heights and level water surfaces. Basic SRTM relief
+    is implemented through `Terrain.heightAt(x, z)` and the persistent raster cache.
 *   **Refresh and eviction**: a time-to-live per tile, using the stored
     release and fetch time.
 *   **Touch controls** for phones and tablets.

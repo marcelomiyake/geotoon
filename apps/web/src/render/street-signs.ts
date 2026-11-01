@@ -24,10 +24,11 @@ export function createStreetSigns(built: BuiltScene, postMaterial: THREE.Materia
   const matrix = new THREE.Matrix4();
   const panels = new Map(names.map((name, index) => [name, panelGeometry(index, names.length)]));
   built.streetSigns.forEach((sign, index) => {
-    matrix.makeTranslation(sign.x, 0, sign.z);
+    const groundY = built.terrain.heightAt(sign.x, sign.z);
+    matrix.makeTranslation(sign.x, groundY, sign.z);
     posts.setMatrixAt(index, matrix);
     const panel = new THREE.Group();
-    panel.position.set(sign.x, SIGN_CENTRE_Y_M, sign.z);
+    panel.position.set(sign.x, groundY + SIGN_CENTRE_Y_M, sign.z);
     panel.rotation.y = -sign.angle;
     const geometry = panels.get(sign.name)!;
     const front = new THREE.Mesh(geometry, panelMaterial);

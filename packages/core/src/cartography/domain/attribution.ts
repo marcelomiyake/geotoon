@@ -13,6 +13,10 @@ const OVERTURE: Attribution = {
   url: 'https://overturemaps.org',
 };
 const DATASET_CREDITS: Readonly<Record<string, Attribution>> = {
+  'SRTM terrain': {
+    text: 'SRTM terrain data courtesy of the U.S. Geological Survey, distributed by Mapzen Terrain Tiles.',
+    url: 'https://github.com/tilezen/joerd/blob/master/docs/attribution.md',
+  },
   'Google Open Buildings': {
     text: 'Google Open Buildings. Available under CC BY 4.0.',
     url: 'https://sites.research.google/gr/open-buildings/',

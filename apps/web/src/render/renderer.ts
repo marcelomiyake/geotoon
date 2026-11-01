@@ -188,7 +188,7 @@ export class SceneRenderer {
       return;
     }
     this.shadowCentre = new THREE.Vector2(Math.round(x), Math.round(z));
-    this.sun.target.position.set(this.shadowCentre.x, 0, this.shadowCentre.y);
+    this.sun.target.position.set(this.shadowCentre.x, this.camera.position.y, this.shadowCentre.y);
     this.sun.position.copy(this.sun.target.position).addScaledVector(SUN_DIRECTION, SUN_DISTANCE_M);
     this.sun.target.updateMatrixWorld();
     this.sun.updateMatrixWorld();
@@ -304,7 +304,7 @@ export class SceneRenderer {
     const scale = new THREE.Vector3();
     const up = new THREE.Vector3(0, 1, 0);
     for (let i = 0; i < count; i += 1) {
-      position.set(data[i * 4]!, 0, data[i * 4 + 1]);
+      position.set(data[i * 4]!, built.terrain.heightAt(data[i * 4]!, data[i * 4 + 1]!), data[i * 4 + 1]);
       const s = data[i * 4 + 2]!;
       scale.set(s, s, s);
       rotation.setFromAxisAngle(up, data[i * 4 + 3]!);
@@ -338,7 +338,7 @@ export class SceneRenderer {
     const up = new THREE.Vector3(0, 1, 0);
     for (let i = 0; i < count; i += 1) {
       matrix.makeRotationAxis(up, -data[i * 3 + 2]!);
-      matrix.setPosition(data[i * 3]!, 0, data[i * 3 + 1]!);
+      matrix.setPosition(data[i * 3]!, built.terrain.heightAt(data[i * 3]!, data[i * 3 + 1]!), data[i * 3 + 1]!);
       poles.setMatrixAt(i, matrix);
     }
     poles.computeBoundingSphere();

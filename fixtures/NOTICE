@@ -18,3 +18,11 @@ fixtures/photon/
 fixtures/scene/
   A scene payload produced by GeoToon from the Overture fixture above; the same
   attribution applies.
+
+fixtures/terrain/srtm-12-1517-2323.png
+  Mapzen Terrain Tiles, Terrarium raster at zoom 12, tile 1517/2323, downloaded
+  2026-11-01 from https://s3.amazonaws.com/elevation-tiles-prod/terrarium/12/1517/2323.png.
+  Source metadata: srtm/S24W047.tif. SRTM terrain data courtesy of the U.S.
+  Geological Survey. Terrain data is not covered by the repository's MIT licence.
+  Source attribution and distribution terms:
+  https://github.com/tilezen/joerd/blob/master/docs/attribution.md

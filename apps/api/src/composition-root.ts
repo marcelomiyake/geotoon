@@ -9,6 +9,7 @@ import {
   SuggestAddresses,
   TILE_ZOOM,
   type MapDataSource,
+  type TerrainReader,
 } from '@geotoon/core';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
@@ -22,6 +23,7 @@ import { PgFeatureStore } from './adapters/postgres/feature-store.js';
 import { migrate, type MigrationResult } from './adapters/postgres/migrator.js';
 import { createPool, waitForDatabase } from './adapters/postgres/pool.js';
 import { PgTileCoverageRepository } from './adapters/postgres/tile-coverage-repository.js';
+import { PgTerrainReader } from './adapters/postgres/terrain-reader.js';
 import { PinoLogger } from './adapters/system/pino-logger.js';
 import { systemClock } from './adapters/system/system-clock.js';
 import { APP_VERSION, type Config } from './config.js';
@@ -44,6 +46,7 @@ export interface Application {
 export interface ComposeOverrides {
   /** Replaces the Overture adapter (tests use a counting fixture source). */
   readonly source?: (duck: DuckDbClient) => MapDataSource;
+  readonly terrain?: TerrainReader;
 }
 
 /** Wires adapters, use cases and the HTTP server by hand. */
@@ -73,7 +76,7 @@ export async function compose(
   const requestArea = new RequestArea({
     coverage,
     scheduler,
-    readScene: new ReadScene(new PgFeatureReader(pool)),
+    readScene: new ReadScene(new PgFeatureReader(pool), overrides.terrain ?? new PgTerrainReader(pool, logger)),
     clock: systemClock,
     owner,
     radiusM: config.areaRadiusM,

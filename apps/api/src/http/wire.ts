@@ -46,6 +46,7 @@ export function toWireScene(scene: Scene): DeepReadonly<AreaReady['scene']> {
       headingDeg: scene.spawn.headingDeg,
     },
     attribution: scene.attribution.map((a) => ({ text: a.text, url: a.url })),
+    ...(scene.terrain === undefined ? {} : { terrain: scene.terrain }),
   };
 }
 

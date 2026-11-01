@@ -20,6 +20,7 @@ const FAST = new Set(['ShiftLeft', 'ShiftRight']);
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 export interface WalkArea {
+  readonly terrain: { heightAt(x: number, z: number): number };
   readonly collision: CollisionIndex;
   readonly radiusM: number;
   readonly spawn: { readonly x: number; readonly z: number; readonly headingRad: number };
@@ -68,7 +69,7 @@ export class WalkControls {
   /** Places the camera at the spawn point, facing the address (heading 0 = north). */
   reset(area: WalkArea): void {
     this.area = area;
-    this.camera.position.set(area.spawn.x, EYE_HEIGHT_M, area.spawn.z);
+    this.camera.position.set(area.spawn.x, area.terrain.heightAt(area.spawn.x, area.spawn.z) + EYE_HEIGHT_M, area.spawn.z);
     this.camera.rotation.set(0, -area.spawn.headingRad, 0, 'YXZ');
   }
 
@@ -104,7 +105,7 @@ export class WalkControls {
     if (clamped) {
       this.onEdge();
     }
-    this.camera.position.set(point.x, EYE_HEIGHT_M, point.z);
+    this.camera.position.set(point.x, area.terrain.heightAt(point.x, point.z) + EYE_HEIGHT_M, point.z);
   }
 }
 

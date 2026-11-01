@@ -125,20 +125,22 @@ export function polesAlong(points: readonly Vec2[], spacing: number, offset: num
  * Sagging wires between consecutive poles, appended to `out` as line segments
  * (x, y, z pairs, 6 floats per segment). Returns the segments added.
  */
-export function addWires(poles: readonly Pole[], out: number[]): number {
+export function addWires(poles: readonly Pole[], out: number[], heightAt: (x: number, z: number) => number = () => 0): number {
   let added = 0;
   for (let i = 0; i + 1 < poles.length; i += 1) {
     const a = poles[i]!;
     const b = poles[i + 1]!;
+    const groundA = heightAt(a.x, a.z);
+    const groundB = heightAt(b.x, b.z);
     for (const [across, y] of WIRES) {
       const from = attachment(a, across);
       const to = attachment(b, across);
-      let previous: [number, number, number] = [from[0], y, from[1]];
+      let previous: [number, number, number] = [from[0], y + groundA, from[1]];
       for (let s = 1; s <= WIRE_SEGMENTS; s += 1) {
         const t = s / WIRE_SEGMENTS;
         const point: [number, number, number] = [
           from[0] + (to[0] - from[0]) * t,
-          y - WIRE_SAG_M * 4 * t * (1 - t),
+          y + groundA * (1 - t) + groundB * t - WIRE_SAG_M * 4 * t * (1 - t),
           from[1] + (to[1] - from[1]) * t,
         ];
         out.push(...previous, ...point);
