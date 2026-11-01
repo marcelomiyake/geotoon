@@ -8,7 +8,7 @@
   "main": "dist/main.js",
   "scripts": {
     "start": "node dist/main.js",
-    "dev": "node --watch --env-file-if-exists=../../.env --conditions=@geotoon/source --experimental-strip-types src/main.ts"
+    "dev": "tsc -b ../../tsconfig.build.json && node --env-file-if-exists=../../.env dist/main.js"
   },
   "dependencies": {
     "@duckdb/node-api": "2.0.0-r.1",
