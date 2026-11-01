@@ -1,0 +1,19 @@
+Test fixtures in this directory are third-party data. The MIT licence of this
+repository does not apply to them.
+
+fixtures/overture/
+  Overture Maps Foundation release 2026-10-21.0, the zoom-16 tile around
+  Av. Bolonha, 200 (São Paulo) and its 8 neighbours, reduced to the columns the
+  adapter reads (apps/api/scripts/record-overture-fixture.ts).
+  Contains data © OpenStreetMap contributors, available under the Open Database
+  License (ODbL 1.0), https://www.openstreetmap.org/copyright, distributed by the
+  Overture Maps Foundation, https://overturemaps.org. Building footprints may also
+  include Google Open Buildings (CC BY 4.0) and Microsoft ML Buildings (ODbL 1.0).
+
+fixtures/photon/
+  One response from the Photon geocoder (https://photon.komoot.io), which serves
+  OpenStreetMap data: © OpenStreetMap contributors, ODbL 1.0.
+
+fixtures/scene/
+  A scene payload produced by GeoToon from the Overture fixture above; the same
+  attribution applies.
