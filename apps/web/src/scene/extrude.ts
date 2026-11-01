@@ -1,6 +1,7 @@
 import earcut from 'earcut';
-import { type MeshBuffer, type Ring, type Vec2, openRing, orient } from './mesh-buffer.js';
+import { type MeshBuffer, type Ring, type Vec2, type Vec3, isCorner, openRing, orient } from './mesh-buffer.js';
 import type { Rgb } from './palette.js';
+import { MAX_GABLE_WALL_M, addGableRoof, gableCorners } from './roof.js';
 
 /** A polygon in local metres: outer ring first, then holes. */
 export type LocalPolygon = readonly Ring[];
@@ -11,6 +12,8 @@ export interface Prism {
   readonly topY: number;
   readonly wallColour: Rgb;
   readonly roofColour: Rgb;
+  /** When set, small rectangular low buildings get a pitched roof in this colour. */
+  readonly tileColour?: Rgb;
 }
 
 /** Cleans a polygon: outer ring counter-clockwise from above, holes clockwise. */
@@ -29,15 +32,17 @@ export function normalisePolygon(polygon: LocalPolygon): Vec2[][] {
   return rings;
 }
 
-/** Corners that turn more than this get a vertical contour; gentle bends (curved walls) do not. */
-export const CREASE_ANGLE_DEG = 30;
-const CREASE_COS = Math.cos((CREASE_ANGLE_DEG * Math.PI) / 180);
 /** Lifts the base contour just above the road and ground layers so it stays visible. */
 export const BASE_LINE_LIFT_M = 0.06;
 
+/** Windows are laid out in slots at least this wide; a shorter wall has none. */
+export const WINDOW_SLOT_M = 3.2;
+
 /**
- * Walls (one quad per ring edge, outward normals) and an earcut roof. When `edges` is
- * given, contour segments are appended to it as x, y, z pairs. Returns triangles added.
+ * Walls (one quad per ring edge, outward normals) and a roof: a pitched roof for small
+ * rectangular low buildings when the prism has a tile colour, otherwise an earcut flat
+ * roof. When `edges` is given, contour segments are appended to it as x, y, z pairs.
+ * Returns triangles added.
  */
 export function extrudePrism(prism: Prism, out: MeshBuffer, edges?: number[]): number {
   const before = out.triangles;
@@ -55,12 +60,25 @@ export function extrudePrism(prism: Prism, out: MeshBuffer, edges?: number[]): n
         addPrismEdges(ring, prism.baseY, prism.topY, edges);
       }
     }
-    fillPolygon(rings, prism.topY, prism.roofColour, out);
+    const gable = pitchedRoofCorners(prism, rings);
+    if (gable !== undefined && prism.tileColour !== undefined) {
+      addGableRoof(gable, prism.topY, prism.wallColour, prism.tileColour, out, edges);
+    } else {
+      fillPolygon(rings, prism.topY, prism.roofColour, out);
+    }
   }
   return out.triangles - before;
 }
 
+function pitchedRoofCorners(prism: Prism, rings: readonly Vec2[][]): ReturnType<typeof gableCorners> {
+  if (prism.tileColour === undefined || rings.length !== 1 || prism.topY - prism.baseY > MAX_GABLE_WALL_M) {
+    return undefined;
+  }
+  return gableCorners(rings[0]!);
+}
+
 function addWalls(ring: readonly Vec2[], y0: number, y1: number, colour: Rgb, out: MeshBuffer): void {
+  const height = y1 - y0;
   for (let i = 0; i < ring.length; i += 1) {
     const p = ring[i]!;
     const q = ring[(i + 1) % ring.length]!;
@@ -75,8 +93,15 @@ function addWalls(ring: readonly Vec2[], y0: number, y1: number, colour: Rgb, ou
     const q0 = [q[0], y0, q[1]] as const;
     const q1 = [q[0], y1, q[1]] as const;
     const p1 = [p[0], y1, p[1]] as const;
-    out.triangle(p0, q0, q1, normal, colour);
-    out.triangle(p0, q1, p1, normal, colour);
+    // Window slots: u runs 0..n along the wall so each window sits centred in its slot.
+    const slots = Math.floor(length / WINDOW_SLOT_M);
+    const slotWidth = slots > 0 ? length / slots : 0;
+    const fp0: Vec3 = [0, height, slotWidth];
+    const fq0: Vec3 = [slots, height, slotWidth];
+    const fq1: Vec3 = [slots, 0, slotWidth];
+    const fp1: Vec3 = [0, 0, slotWidth];
+    out.triangle(p0, q0, q1, normal, colour, [fp0, fq0, fq1]);
+    out.triangle(p0, q1, p1, normal, colour, [fp0, fq1, fp1]);
   }
 }
 
@@ -113,17 +138,4 @@ export function addPrismEdges(ring: readonly Vec2[], y0: number, y1: number, edg
       edges.push(p[0], base, p[1], p[0], y1, p[1]);
     }
   }
-}
-
-/** Whether the outline turns at `b` by more than {@link CREASE_ANGLE_DEG}. */
-export function isCorner(a: Vec2, b: Vec2, c: Vec2): boolean {
-  const ux = b[0] - a[0];
-  const uz = b[1] - a[1];
-  const vx = c[0] - b[0];
-  const vz = c[1] - b[1];
-  const lengths = Math.hypot(ux, uz) * Math.hypot(vx, vz);
-  if (lengths < 1e-12) {
-    return false;
-  }
-  return (ux * vx + uz * vz) / lengths < CREASE_COS;
 }

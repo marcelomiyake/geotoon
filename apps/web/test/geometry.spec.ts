@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { CollisionIndex, WALKER_RADIUS_M, clampToRadius, closestOnSegment } from '../src/scene/collision.js';
-import { BASE_LINE_LIFT_M, addPrismEdges, extrudePrism, isCorner, normalisePolygon } from '../src/scene/extrude.js';
-import { LAYER_HEIGHT_M, addArea, addGroundDisc, layerForArea } from '../src/scene/ground.js';
-import { MeshBuffer, openRing, orient, signedArea, type Vec2 } from '../src/scene/mesh-buffer.js';
+import { BASE_LINE_LIFT_M, WINDOW_SLOT_M, addPrismEdges, extrudePrism, normalisePolygon } from '../src/scene/extrude.js';
+import { GROUND_LAYERS, LAYER_HEIGHT_M, addArea, addGroundDisc, layerForArea } from '../src/scene/ground.js';
+import { MeshBuffer, NO_FACADE, isCorner, openRing, orient, signedArea, type Vec2 } from '../src/scene/mesh-buffer.js';
 import { createProjection } from '../src/scene/projection.js';
 import { MITER_LIMIT, addRibbon, offsetAt } from '../src/scene/ribbons.js';
 import { MAX_TREE_SCALE, MIN_TREE_SCALE, buildTrees } from '../src/scene/trees.js';
+import { windingMatchesNormals } from './winding.js';
 
 const RED = [1, 0, 0] as const;
 const BLUE = [0, 0, 1] as const;
@@ -16,23 +17,6 @@ const SQUARE: Vec2[] = [
   [10, 10],
   [10, 0],
 ];
-
-/** Every triangle's winding must agree with its stored normal (front faces point outward). */
-function windingMatchesNormals(mesh: MeshBuffer): boolean {
-  const { positions, normals, triangles } = mesh.toMeshData();
-  for (let t = 0; t < triangles; t += 1) {
-    const p = (k: number) => [positions[t * 9 + k * 3]!, positions[t * 9 + k * 3 + 1]!, positions[t * 9 + k * 3 + 2]!];
-    const [a, b, c] = [p(0), p(1), p(2)];
-    const u = [b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!];
-    const v = [c[0]! - a[0]!, c[1]! - a[1]!, c[2]! - a[2]!];
-    const cross = [u[1]! * v[2]! - u[2]! * v[1]!, u[2]! * v[0]! - u[0]! * v[2]!, u[0]! * v[1]! - u[1]! * v[0]!];
-    const n = [normals[t * 9]!, normals[t * 9 + 1]!, normals[t * 9 + 2]!];
-    if (cross[0]! * n[0]! + cross[1]! * n[1]! + cross[2]! * n[2]! <= 0) {
-      return false;
-    }
-  }
-  return true;
-}
 
 describe('projection', () => {
   const projection = createProjection(-23.548_582, -46.746_914);
@@ -123,6 +107,32 @@ describe('extrudePrism', () => {
     expect([...ys].sort((a, b) => a - b)).toEqual([BASE_LINE_LIFT_M, 6]);
   });
 
+  it('gives walls window slots and the distance to the wall top, and roofs no facade', () => {
+    const mesh = new MeshBuffer({ facade: true });
+    extrudePrism(prism([SQUARE], 0, 6), mesh);
+    const { facade } = mesh.toMeshData();
+    const slots = Math.floor(10 / WINDOW_SLOT_M);
+    // First wall triangle: p0 (bottom start), q0 (bottom end), q1 (top end).
+    expect(Array.from(facade!.slice(0, 9))).toEqual([0, 6, Math.fround(10 / slots), slots, 6, Math.fround(10 / slots), slots, 0, Math.fround(10 / slots)]);
+    expect(Array.from(facade!.slice(8 * 9, 8 * 9 + 3))).toEqual([...NO_FACADE]);
+    const short = new MeshBuffer({ facade: true });
+    extrudePrism(prism([[[0, 0], [0, 2], [2, 2], [2, 0]]]), short);
+    expect(short.toMeshData().facade![2]).toBe(0);
+  });
+
+  it('puts a pitched roof on small rectangular low buildings that have a tile colour', () => {
+    const house = { ...prism([SQUARE], 0, 6), tileColour: BLUE };
+    const mesh = new MeshBuffer();
+    const edges: number[] = [];
+    // 8 wall + 8 slope (top and underside) + 4 eave board + 2 gable triangles.
+    expect(extrudePrism(house, mesh, edges)).toBe(22);
+    expect(windingMatchesNormals(mesh)).toBe(true);
+    expect(edges.length / 6).toBe(12 + 9);
+    expect(extrudePrism({ ...house, topY: 30 }, new MeshBuffer())).toBe(10);
+    const hole: Vec2[] = [[3, 3], [3, 7], [7, 7], [7, 3]];
+    expect(extrudePrism({ ...house, polygons: [[SQUARE, hole]] }, new MeshBuffer())).toBe(24);
+  });
+
   it('leaves gentle bends of curved walls without verticals', () => {
     const circle: Vec2[] = Array.from({ length: 36 }, (_, i) => [
       Math.cos((i / 36) * Math.PI * 2) * 10,
@@ -167,6 +177,9 @@ describe('ground', () => {
     expect(layerForArea('industrial')).toBe('landuse');
     expect(LAYER_HEIGHT_M.base).toBeLessThan(LAYER_HEIGHT_M.landuse);
     expect(LAYER_HEIGHT_M.landuse).toBeLessThan(LAYER_HEIGHT_M.roads);
+    const heights = GROUND_LAYERS.map((layer) => LAYER_HEIGHT_M[layer]);
+    expect(heights).toEqual([...heights].sort((a, b) => a - b));
+    expect(new Set(GROUND_LAYERS).size).toBe(Object.keys(LAYER_HEIGHT_M).length);
   });
 
   it('fills areas at their layer height and builds the base disc', () => {

@@ -1,11 +1,24 @@
 import type { Scene } from '@geotoon/contracts';
 import { CollisionIndex } from './collision.js';
 import { type LocalPolygon, extrudePrism, normalisePolygon } from './extrude.js';
-import { type GroundLayer, LAYER_HEIGHT_M, addArea, addGroundDisc, layerForArea } from './ground.js';
+import { GROUND_LAYERS, type GroundLayer, LAYER_HEIGHT_M, addArea, addGroundDisc, layerForArea } from './ground.js';
 import { MeshBuffer, type MeshData, type Vec2 } from './mesh-buffer.js';
-import { buildingColours, lineColour } from './palette.js';
+import { MARKING_COLOUR, SIDEWALK_COLOUR, buildingColours, lineColour } from './palette.js';
 import { type Projection, createProjection } from './projection.js';
 import { addRibbon } from './ribbons.js';
+import {
+  DASH_GAP_M,
+  DASH_M,
+  MARKING_WIDTH_M,
+  POLE_SPACING_M,
+  SIDEWALK_WIDTH_M,
+  addWires,
+  dashes,
+  hasCentreLine,
+  hasPoles,
+  hasSidewalks,
+  polesAlong,
+} from './street.js';
 import { type TreeInstances, buildTrees } from './trees.js';
 
 /** The ground disc reaches this far past the area radius. */
@@ -13,6 +26,17 @@ export const GROUND_MARGIN_M = 50;
 const GROUND_SEGMENTS = 96;
 /** Buildings are grouped into square chunks so the renderer can cull distant ones. */
 export const CHUNK_SIZE_M = 250;
+/** Buildings of these kinds keep flat roofs whatever their shape. */
+const FLAT_ROOF_KINDS: ReadonlySet<string> = new Set([
+  'apartments',
+  'commercial',
+  'industrial',
+  'retail',
+  'office',
+  'warehouse',
+  'school',
+  'hospital',
+]);
 
 export interface BuiltScene {
   readonly projection: Projection;
@@ -23,6 +47,10 @@ export interface BuiltScene {
   readonly buildingEdges: readonly Float32Array[];
   readonly ground: Readonly<Record<GroundLayer, MeshData>>;
   readonly trees: TreeInstances;
+  /** Utility poles packed as [x, z, streetAngleRad] per pole. */
+  readonly poles: { readonly data: Float32Array; readonly count: number };
+  /** Overhead wires as line segments (6 floats per segment). */
+  readonly wires: Float32Array;
   readonly collision: CollisionIndex;
   readonly spawn: { readonly x: number; readonly z: number; readonly headingRad: number };
   readonly stats: SceneStats;
@@ -33,6 +61,8 @@ export interface SceneStats {
   readonly lines: number;
   readonly areas: number;
   readonly trees: number;
+  readonly poles: number;
+  readonly wireSegments: number;
   readonly triangles: number;
   readonly outlineSegments: number;
   readonly collisionEdges: number;
@@ -53,53 +83,22 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     polygon.map((ring) => ring.map(([lon, lat]) => projection.toLocal(lon!, lat!)));
 
   const collision = new CollisionIndex();
-  const chunks = new Map<string, { mesh: MeshBuffer; edges: number[] }>();
-  for (const building of scene.buildings) {
-    const polygons = building.footprint.map(project);
-    const anchor = polygons[0]?.[0]?.[0];
-    if (anchor === undefined) {
-      continue;
-    }
-    const key = `${Math.floor(anchor[0] / CHUNK_SIZE_M)}:${Math.floor(anchor[1] / CHUNK_SIZE_M)}`;
-    let chunk = chunks.get(key);
-    if (chunk === undefined) {
-      chunk = { mesh: new MeshBuffer(), edges: [] };
-      chunks.set(key, chunk);
-    }
-    const colours = buildingColours(building.id);
-    extrudePrism(
-      {
-        polygons,
-        baseY: building.minHeightM,
-        topY: building.heightM,
-        wallColour: colours.wall,
-        roofColour: colours.roof,
-      },
-      chunk.mesh,
-      chunk.edges,
-    );
-    if (building.minHeightM < 2) {
-      addFootprintEdges(polygons, collision);
-    }
-  }
+  const chunks = addBuildings(scene.buildings, project, collision);
 
-  const ground: Record<GroundLayer, MeshBuffer> = {
-    base: new MeshBuffer(),
-    landuse: new MeshBuffer(),
-    green: new MeshBuffer(),
-    water: new MeshBuffer(),
-    roads: new MeshBuffer(),
-  };
+  const ground = Object.fromEntries(GROUND_LAYERS.map((layer) => [layer, new MeshBuffer()])) as Record<
+    GroundLayer,
+    MeshBuffer
+  >;
   addGroundDisc(area.radiusM + GROUND_MARGIN_M, GROUND_SEGMENTS, ground.base);
   for (const sceneArea of scene.areas) {
     addArea(sceneArea.polygons.map(project), sceneArea.kind, ground[layerForArea(sceneArea.kind)]);
   }
+  const poles: number[] = [];
+  const wires: number[] = [];
   for (const line of scene.lines) {
-    const target = line.kind === 'stream' || line.kind === 'river' ? ground.water : ground.roads;
-    const y = target === ground.water ? LAYER_HEIGHT_M.water + 0.005 : LAYER_HEIGHT_M.roads;
     for (const part of line.coords) {
       const points: Vec2[] = part.map(([lon, lat]) => projection.toLocal(lon, lat));
-      addRibbon(points, line.widthM, y, lineColour(line.kind), target);
+      addLine(line.kind, line.widthM, points, ground, poles, wires);
     }
   }
 
@@ -111,13 +110,9 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     .filter((chunk) => chunk.edges.length > 0)
     .map((chunk) => new Float32Array(chunk.edges));
   const outlineSegments = buildingEdges.reduce((sum, edges) => sum + edges.length / 6, 0);
-  const groundData = {
-    base: ground.base.toMeshData(),
-    landuse: ground.landuse.toMeshData(),
-    green: ground.green.toMeshData(),
-    water: ground.water.toMeshData(),
-    roads: ground.roads.toMeshData(),
-  };
+  const groundData = Object.fromEntries(
+    GROUND_LAYERS.map((layer) => [layer, ground[layer].toMeshData()]),
+  ) as Record<GroundLayer, MeshData>;
   const triangles = [...buildings, ...Object.values(groundData)].reduce(
     (sum, mesh) => sum + mesh.triangles,
     0,
@@ -129,6 +124,8 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     buildingEdges,
     ground: groundData,
     trees,
+    poles: { data: new Float32Array(poles), count: poles.length / 3 },
+    wires: new Float32Array(wires),
     collision,
     spawn: { x: spawnX, z: spawnZ, headingRad: (scene.spawn.headingDeg * Math.PI) / 180 },
     stats: {
@@ -136,12 +133,90 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
       lines: scene.lines.length,
       areas: scene.areas.length,
       trees: trees.count,
+      poles: poles.length / 3,
+      wireSegments: wires.length / 6,
       triangles,
       outlineSegments,
       collisionEdges: collision.size,
       buildMs: Math.round(now() - started),
     },
   };
+}
+
+type BuildingChunk = { mesh: MeshBuffer; edges: number[] };
+
+/** Extrudes buildings into chunks by position and indexes ground-level walls for collisions. */
+function addBuildings(
+  buildings: Scene['buildings'],
+  project: (polygon: readonly (readonly (readonly number[])[])[]) => LocalPolygon,
+  collision: CollisionIndex,
+): Map<string, BuildingChunk> {
+  const chunks = new Map<string, BuildingChunk>();
+  for (const building of buildings) {
+    const polygons = building.footprint.map(project);
+    const anchor = polygons[0]?.[0]?.[0];
+    if (anchor === undefined) {
+      continue;
+    }
+    const key = `${Math.floor(anchor[0] / CHUNK_SIZE_M)}:${Math.floor(anchor[1] / CHUNK_SIZE_M)}`;
+    let chunk = chunks.get(key);
+    if (chunk === undefined) {
+      chunk = { mesh: new MeshBuffer({ facade: true }), edges: [] };
+      chunks.set(key, chunk);
+    }
+    const colours = buildingColours(building.id);
+    const pitched = building.minHeightM < 0.5 && !FLAT_ROOF_KINDS.has(building.kind);
+    extrudePrism(
+      {
+        polygons,
+        baseY: building.minHeightM,
+        topY: building.heightM,
+        wallColour: colours.wall,
+        roofColour: colours.roof,
+        ...(pitched ? { tileColour: colours.tile } : {}),
+      },
+      chunk.mesh,
+      chunk.edges,
+    );
+    if (building.minHeightM < 2) {
+      addFootprintEdges(polygons, collision);
+    }
+  }
+  return chunks;
+}
+
+/**
+ * One line part: water as a ribbon on the water layer; streets as a ribbon plus, by kind,
+ * sidewalks, a dashed centre line and utility poles with wires.
+ */
+function addLine(
+  kind: string,
+  widthM: number,
+  points: readonly Vec2[],
+  ground: Record<GroundLayer, MeshBuffer>,
+  poles: number[],
+  wires: number[],
+): void {
+  if (kind === 'stream' || kind === 'river') {
+    addRibbon(points, widthM, LAYER_HEIGHT_M.water + 0.005, lineColour(kind), ground.water);
+    return;
+  }
+  addRibbon(points, widthM, LAYER_HEIGHT_M.roads, lineColour(kind), ground.roads);
+  if (hasSidewalks(kind)) {
+    addRibbon(points, widthM + SIDEWALK_WIDTH_M * 2, LAYER_HEIGHT_M.sidewalks, SIDEWALK_COLOUR, ground.sidewalks);
+  }
+  if (hasCentreLine(kind, widthM)) {
+    for (const dash of dashes(points, DASH_M, DASH_GAP_M)) {
+      addRibbon(dash, MARKING_WIDTH_M, LAYER_HEIGHT_M.markings, MARKING_COLOUR, ground.markings);
+    }
+  }
+  if (hasPoles(kind)) {
+    const placed = polesAlong(points, POLE_SPACING_M, widthM / 2 + SIDEWALK_WIDTH_M / 2);
+    for (const pole of placed) {
+      poles.push(pole.x, pole.z, pole.angle);
+    }
+    addWires(placed, wires);
+  }
 }
 
 function addFootprintEdges(polygons: readonly LocalPolygon[], collision: CollisionIndex): void {

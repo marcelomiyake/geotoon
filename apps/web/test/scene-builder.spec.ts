@@ -6,7 +6,10 @@ import { extrudePrism } from '../src/scene/extrude.js';
 import {
   GROUND_COLOUR,
   INK_COLOUR,
+  LIT_TINT,
   ROOF_COLOURS,
+  SHADOW_TINT,
+  TILE_COLOURS,
   WALL_COLOURS,
   areaColour,
   buildingColours,
@@ -15,6 +18,7 @@ import {
   srgbToLinear,
 } from '../src/scene/palette.js';
 import { GROUND_MARGIN_M, buildScene } from '../src/scene/scene-builder.js';
+import { WIRES, WIRE_SEGMENTS } from '../src/scene/street.js';
 
 // Recorded by the G2 integration test from the Overture fixture (radius 250 m).
 const ready = AreaReadySchema.parse(recorded);
@@ -52,6 +56,26 @@ describe('buildScene on the recorded PoC payload', () => {
     const chunkTriangles = built.buildings.reduce((sum, chunk) => sum + chunk.triangles, 0);
     expect(chunkTriangles).toBeGreaterThan(ready.scene.buildings.length * 4);
     expect(built.stats.outlineSegments).toBe(built.buildingEdges.reduce((sum, e) => sum + e.length / 6, 0));
+  });
+
+  it('gives every building vertex facade coordinates and some houses pitched roofs', () => {
+    for (const chunk of built.buildings) {
+      expect(chunk.facade).toHaveLength(chunk.positions.length);
+    }
+    const sloped = built.buildings.some((chunk) =>
+      chunk.normals.some((value, i) => i % 3 === 1 && Math.abs(value) > 0.2 && Math.abs(value) < 0.98),
+    );
+    expect(sloped).toBe(true);
+  });
+
+  it('adds sidewalks, centre lines, poles and wires along the streets', () => {
+    expect(built.ground.sidewalks.triangles).toBeGreaterThan(0);
+    expect(built.ground.markings.triangles).toBeGreaterThan(0);
+    expect(built.stats.poles).toBe(built.poles.count);
+    expect(built.poles.data).toHaveLength(built.poles.count * 3);
+    expect(built.stats.poles).toBeGreaterThan(10);
+    expect(built.stats.wireSegments).toBe(built.wires.length / 6);
+    expect(built.stats.wireSegments % (WIRES.length * WIRE_SEGMENTS)).toBe(0);
   });
 
   it('lays the ground disc just past the radius and fills the layers it needs', () => {
@@ -93,11 +117,12 @@ describe('palette', () => {
     expect(hexToRgb(0xff8000)).toEqual([1, srgbToLinear(128 / 255), 0]);
   });
 
-  it('gives each building stable wall and roof colours from the palettes', () => {
+  it('gives each building stable wall, roof and tile colours from the palettes', () => {
     const colours = buildingColours('00011ca5-cfd6-4f62-bd76-9e2c3e86285f');
     expect(buildingColours('00011ca5-cfd6-4f62-bd76-9e2c3e86285f')).toEqual(colours);
     expect(WALL_COLOURS).toContainEqual(colours.wall);
     expect(ROOF_COLOURS).toContainEqual(colours.roof);
+    expect(TILE_COLOURS).toContainEqual(colours.tile);
     const walls = new Set(Array.from({ length: 200 }, (_, i) => buildingColours(`b${i}`).wall.join()));
     expect(walls.size).toBe(WALL_COLOURS.length);
   });
@@ -108,5 +133,7 @@ describe('palette', () => {
     expect(areaColour('water')).not.toEqual(areaColour('park'));
     expect(GROUND_COLOUR.every((c) => c > 0 && c <= 1)).toBe(true);
     expect(INK_COLOUR).toBeLessThan(0x333333);
+    expect(LIT_TINT.every((lit, i) => lit > SHADOW_TINT[i]!)).toBe(true);
+    expect(SHADOW_TINT[2]).toBeGreaterThan(SHADOW_TINT[0]);
   });
 });
