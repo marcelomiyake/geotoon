@@ -23,6 +23,8 @@ import {
 import { type TreeInstances, buildTrees } from './trees.js';
 import { type StreetSign, buildStreetSigns } from './street-signs.js';
 import { Terrain } from './terrain.js';
+import { buildIntersections } from './intersections.js';
+import { type TrafficLight, addCrossings, buildTraffic } from './traffic.js';
 
 /** The ground disc reaches this far past the area radius. */
 export const GROUND_MARGIN_M = 50;
@@ -34,6 +36,7 @@ export interface BuiltScene {
   readonly terrain: Terrain;
   readonly architecture: ArchitectureStyle;
   readonly streetSigns: readonly StreetSign[];
+  readonly trafficLights: readonly TrafficLight[];
   readonly projection: Projection;
   readonly radiusM: number;
   /** One mesh per non-empty chunk. */
@@ -58,6 +61,8 @@ export interface SceneStats {
   readonly trees: number;
   readonly poles: number;
   readonly streetSigns: number;
+  readonly trafficLights: number;
+  readonly crossings: number;
   readonly wireSegments: number;
   readonly triangles: number;
   readonly outlineSegments: number;
@@ -83,7 +88,9 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
   const terrain = new Terrain(scene.terrain);
   const architecture = architectureFor(area.locality);
   const chunks = addBuildings(scene.buildings, project, collision, architecture, terrain);
-  const streetSigns = buildStreetSigns(scene.lines, projection, area.radiusM, collision);
+  const intersections = buildIntersections(scene.lines, projection, area.radiusM);
+  const streetSigns = buildStreetSigns(intersections, area.radiusM, collision);
+  const traffic = buildTraffic(intersections, area.radiusM, collision);
 
   const ground = Object.fromEntries(GROUND_LAYERS.map((layer) => [layer, new MeshBuffer()])) as Record<
     GroundLayer,
@@ -101,6 +108,7 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
       addLine(line.kind, line.widthM, points, ground, poles, wires, terrain);
     }
   }
+  addCrossings(traffic.crossings, ground.markings);
 
   const trees = buildTrees(scene.trees.map(([lon, lat]) => projection.toLocal(lon, lat)));
   const [spawnX, spawnZ] = projection.toLocal(scene.spawn.lon, scene.spawn.lat);
@@ -122,6 +130,7 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     terrain,
     architecture,
     streetSigns,
+    trafficLights: traffic.lights,
     projection,
     radiusM: area.radiusM,
     buildings,
@@ -139,6 +148,8 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
       trees: trees.count,
       poles: poles.length / 3,
       streetSigns: streetSigns.length,
+      trafficLights: traffic.lights.length,
+      crossings: traffic.crossings.length,
       wireSegments: wires.length / 6,
       triangles,
       outlineSegments,

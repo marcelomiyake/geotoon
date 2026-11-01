@@ -14,7 +14,7 @@ export function createStreetSigns(built: BuiltScene, postMaterial: THREE.Materia
   if (built.streetSigns.length === 0) {
     return group;
   }
-  const names = [...new Set(built.streetSigns.map((sign) => sign.name))];
+  const names = [...new Set(built.streetSigns.flatMap((sign) => sign.panels.map((panel) => panel.name)))];
   const atlas = signAtlas(names, built);
   const panelMaterial = new THREE.MeshBasicMaterial({ map: atlas });
   panelMaterial.userData['outlineParameters'] = { visible: false };
@@ -27,17 +27,19 @@ export function createStreetSigns(built: BuiltScene, postMaterial: THREE.Materia
     const groundY = built.terrain.heightAt(sign.x, sign.z);
     matrix.makeTranslation(sign.x, groundY, sign.z);
     posts.setMatrixAt(index, matrix);
-    const panel = new THREE.Group();
-    panel.position.set(sign.x, groundY + SIGN_CENTRE_Y_M, sign.z);
-    panel.rotation.y = -sign.angle;
-    const geometry = panels.get(sign.name)!;
-    const front = new THREE.Mesh(geometry, panelMaterial);
-    const back = new THREE.Mesh(geometry, panelMaterial);
-    front.position.z = 0.025;
-    back.position.z = -0.025;
-    back.rotation.y = Math.PI;
-    panel.add(front, back);
-    group.add(panel);
+    for (const spec of sign.panels) {
+      const panel = new THREE.Group();
+      panel.position.set(sign.x, groundY + SIGN_CENTRE_Y_M, sign.z);
+      panel.rotation.y = -spec.angle;
+      const geometry = panels.get(spec.name)!;
+      const front = new THREE.Mesh(geometry, panelMaterial);
+      const back = new THREE.Mesh(geometry, panelMaterial);
+      front.position.set(SIGN_WIDTH_M / 2, 0, 0.025);
+      back.position.set(SIGN_WIDTH_M / 2, 0, -0.025);
+      back.rotation.y = Math.PI;
+      panel.add(front, back);
+      group.add(panel);
+    }
   });
   posts.computeBoundingSphere();
   group.add(posts);

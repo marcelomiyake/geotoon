@@ -16,7 +16,10 @@ the slopes. Elevation is shown at its natural scale on a 50 m grid, smoothed ove
 Address searches also carry the country and city into the visual style. Brazil uses
 plaster/concrete colours, clay and slab roofs, and wider windows with slim frames;
 São Paulo has a city override with more slab roofs and blue street-name panels inspired
-by its signs. Panels show real names from the map, on both sides, along named streets.
+by its signs. At street corners, two panels share a post and show the intersecting
+streets’ real names on both sides. Zebra crossings mark junction approaches, and larger
+junctions have traffic lights with alternating red, amber and green phases. Their
+positions are inferred from connected road geometry, rather than surveyed traffic data.
 Other places keep the original building style and use neutral street-name panels.
 These are procedural visual profiles, not reconstructions of individual facades.
 
@@ -26,12 +29,13 @@ New country profiles and city overrides belong in `apps/web/src/scene/architectu
 they can change palettes, roof mix, window spacing/proportions and sign design without
 changing stored tiles or making additional map-source calls.
 
-![Street-level tour around Av. Paulista, 1578, São Paulo: blue street-name signs, local façades and geographical relief](docs/images/street-drive.gif)
+![Street-level tour around Av. Paulista, 1578, São Paulo: paired corner signs, traffic lights, zebra crossings and geographical relief](docs/images/street-drive.gif)
 
 ![Aerial orbit around Av. Paulista, 1578 — MASP, São Paulo: the cel-shaded city and its geographical relief](docs/images/aerial-orbit.gif)
 
 Recorded from the local Kind deployment with the São Paulo profile: a 10-second street
-tour and a 6-second aerial orbit. Both animations retain the map-data attribution.
+tour and a 6-second aerial orbit. Ground overlays use a stable paint order to prevent
+street flicker where road ribbons overlap. Both animations retain map-data attribution.
 
 The first visit to an area downloads its map data (about 80 s for 2 km); every later
 visit to the same area reads only from PostGIS.
