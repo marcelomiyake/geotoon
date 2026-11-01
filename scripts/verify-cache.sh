@@ -17,22 +17,23 @@ post() {
 }
 
 field() {
-  node -e 'const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const v = process.argv[2].split(".").reduce((o, k) => o?.[k], b); console.log(typeof v === "object" ? JSON.stringify(v) : v);' "$TMP/body.json" "$1"
+  local path="$1"
+  node -e 'const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const v = process.argv[2].split(".").reduce((o, k) => o?.[k], b); console.log(typeof v === "object" ? JSON.stringify(v) : v);' "$TMP/body.json" "$path"
 }
 
 echo "1. First request for ${LAT}, ${LON}"
 started=$(date +%s)
 code=$(post)
 echo "   HTTP ${code}, status $(field status), sourceCalls $(field sourceCalls), tiles $(field tiles.length)"
-while [ "$code" = "202" ]; do
+while [[ "$code" == "202" ]]; do
   sleep 2
   code=$(post)
-  if [ $(( $(date +%s) - started )) -gt 300 ]; then
+  if (( $(date +%s) - started > 300 )); then
     echo "FAIL: area not ready after 300 s" >&2
     exit 1
   fi
 done
-if [ "$code" != "200" ]; then
+if [[ "$code" != "200" ]]; then
   echo "FAIL: expected 200, got ${code}: $(cat "$TMP/body.json")" >&2
   exit 1
 fi
@@ -44,7 +45,7 @@ calls=$(field sourceCalls)
 status=$(field status)
 incomplete=$(node -e 'const b = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log(b.tiles.filter((t) => t.state !== "complete").length);' "$TMP/body.json")
 echo "   HTTP ${code}, status ${status}, sourceCalls ${calls}, incomplete tiles ${incomplete}"
-if [ "$code" != "200" ] || [ "$status" != "ready" ] || [ "$calls" != "0" ] || [ "$incomplete" != "0" ]; then
+if [[ "$code" != "200" || "$status" != "ready" || "$calls" != "0" || "$incomplete" != "0" ]]; then
   echo "FAIL: the second request did not read only from PostGIS" >&2
   exit 1
 fi
