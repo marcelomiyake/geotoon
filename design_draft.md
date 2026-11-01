@@ -559,3 +559,246 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
     *   Rejected: one table per layer, because of four near-identical upsert
         and read paths.
 
+## Alternatives Considered
+
+### Alternative A: Google Photorealistic 3D Tiles (Google Earth meshes)
+
+*   **Pros**: Photographic detail of every facade, sign and tree; worldwide
+    city coverage.
+*   **Cons**:
+    *   Google's terms forbid storing, exporting or rebuilding them, which
+        contradicts G2 (store once in PostGIS).
+    *   The meshes are unlit, with shadows baked into the photos and missing
+        normals, so stepped toon lighting cannot work.
+    *   Trees, cars and buildings are fused into one surface, so there is
+        nothing to collide with per building.
+    *   A billing account is needed.
+*   **Reason for Rejection**: Incompatible with G2, with the cel-shaded goal
+    and with licensing (Reference 1).
+
+### Alternative B: Cesium OSM Buildings (checklist item 3)
+
+*   **Pros**: Ready-made 3D buildings with estimated heights; the owner's
+    original list included it.
+*   **Cons**:
+    *   It contains only OSM buildings: 585 within 1 km of the PoC address,
+        against 6,719 in Overture, which already includes those OSM buildings
+        and their height tags.
+    *   It needs a Cesium ion account token.
+    *   Cesium staff state that storing or exporting its data for offline use
+        needs a paid licence, which conflicts with G2.
+*   **Reason for Rejection**: It adds no buildings or heights beyond
+    Overture, and storing it is likely not permitted. Its height-estimation
+    idea is kept as `HeightRule`. Reported as a departure from the checklist.
+
+### Alternative C: OSM layers from the public Overpass API (D1)
+
+*   **Pros**: Data comes straight from OSM, minutes old, with full tags.
+    This matches the checklist wording "ingestion from OSM".
+*   **Cons**:
+    *   Stage 0 measurements: 38 s for one 0.3 km² tile, 32 s for the 1 km
+        circle, and the third back-to-back query was refused (502).
+    *   A 2 km query failed on all four public instances.
+    *   The operator asks automated users to run their own instance.
+    *   Multipolygon relations need ring assembly, and an HTTP 200 can carry
+        a `remark` error with truncated data.
+*   **Reason for Rejection**: Overture's `transportation` and `base` themes
+    carry the same OSM streets, parks, water and trees (100%
+    `OpenStreetMap`-sourced in the PoC box), read from S3 in 3 to 17 s per
+    theme, through the DuckDB reader already needed for buildings. Reported
+    as a departure: the OSM data arrives through Overture.
+
+### Alternative D: One-time regional OSM extract loaded with osm2pgsql
+
+*   **Pros**: No runtime dependency on any OSM server; full tags.
+*   **Cons**: A heavy import (a regional extract is hundreds of MB to GB) at
+    install time. It covers only the region loaded, so any other address
+    fails. It adds osm2pgsql to the image or chart.
+*   **Reason for Rejection**: Breaks "enter any address" and slows down
+    `helm install` (G3).
+
+### Alternative E: Rust and WebAssembly renderer (Reference 2 stack)
+
+*   **Pros**: Lower-level control over GPU memory and threads; a single
+    language could span client and server.
+*   **Cons**:
+    *   wgpu or Bevy for the web costs much more to build than Three.js.
+    *   Floating origins, CDLOD terrain and navmesh solve planet-scale
+        problems this PoC does not have: a 2 km scene works with 32-bit
+        floats, there is no terrain source, and no goal needs pathfinding.
+*   **Reason for Rejection**: The owner chose TypeScript and Three.js, with
+    Rust only where it measurably helps. The estimates show no hot spot
+    (about 108k footprint vertices at 2 km).
+
+### Alternative F: One long synchronous request instead of request-then-poll (D2)
+
+*   **Pros**: The simplest contract and client (`egm-zoom-out`'s position).
+*   **Cons**:
+    *   The first load can exceed the common 60 s proxy timeout. The browser
+        then sees a 504 while the server finishes, and the fast retry hides
+        the cause.
+    *   A client disconnect could abort ingestion that should be stored.
+    *   Switching to polling later would change the contract.
+*   **Reason for Rejection**: Polling the same idempotent `POST /areas` adds
+    no queue, using the coverage table as the job state.
+
+### Alternative G: Separate ingestion worker Deployment (PD1)
+
+*   **Pros**: DuckDB memory spikes cannot take down reads of stored areas.
+*   **Cons**: A second Deployment, a polling loop, about 1 s more latency,
+    and silent `pending` when the worker is down.
+*   **Reason for Rejection**: The owner chose ingestion inside the API
+    process (PD1 = A), with the mitigations listed in the Technical Plan.
+
+### Alternative H: One table per feature layer (PD2)
+
+*   **Pros**: Typed geometry columns and constraints per layer.
+*   **Cons**: Four near-identical upsert, read and mapping paths.
+*   **Reason for Rejection**: The owner chose one `map_feature` table
+    (PD2 = A).
+
+### Alternative I: A table of fetched circles instead of a tile grid (D3)
+
+*   **Pros**:
+    *   No tile maths.
+    *   Overture's fetch time is flat per query, so tiles do not save fetch
+        time (`egm-zoom-out`).
+*   **Cons**: No fixed keys to lease, so two overlapping requests cannot
+    agree on who fetches. "Same area" would need an `ST_Covers` test over a
+    union of circles.
+*   **Reason for Rejection**: Fixed tile keys give single-flight leases and
+    per-tile evidence for G2.
+
+### Smaller choices rejected during review
+
+*   **PostgreSQL packaging:**
+    *   Bitnami's PostgreSQL chart: no PostGIS.
+    *   The CloudNativePG operator: needs CRDs installed before the chart.
+    *   `emptyDir` storage: a restart erases the cache.
+    *   A password regenerated on every install: no longer matches the data
+        directory after a reinstall.
+*   **Migrations:** Prisma (no geometry type), a Helm `pre-install` hook (the
+    database does not exist yet), and a plain Job (its template cannot
+    change on upgrade).
+*   **Reaching the app:** an ingress controller (an extra install, and a
+    60 s timeout) and separate web and API Services (CORS, two ports).
+*   **Images:** `latest` tags (pull errors on Kind).
+*   **Tile storage:**
+    *   Clipping features at tile edges: seams and lost geometry.
+    *   Storing a feature once per tile: drawn twice.
+    *   Zoom as a Helm value: stored rows become unreachable.
+*   **Concurrency:**
+    *   In-process locks: do not survive restarts.
+    *   An advisory lock held across the remote fetch: ties up a connection
+        and an open transaction for a minute.
+*   **Heights:**
+    *   Storing only the final estimated height: a rule change would force
+        refetching.
+    *   A per-class height table: 95% of buildings have no class.
+*   **Data access:**
+    *   The legacy `duckdb` npm package: deprecated in favour of
+        `@duckdb/node-api`.
+    *   An Alpine base image: DuckDB binaries need glibc.
+    *   The Overture Python CLI: a second runtime.
+*   **Rendering:**
+    *   Custom GLSL toon shaders, or Three.js example code copied into the
+        repo: unanalysed, or duplicated, code.
+    *   `WebGPURenderer`: `OutlineEffect` is WebGL-only.
+    *   Rendering in Web Mercator metres: a 9% scale error at -23.5°.
+*   **Monorepo tooling:** Nx, Turborepo, Lerna or a UI framework. Nothing
+    in scope needs them.
+*   **Observability:** a full stack (OpenTelemetry, Prometheus, Grafana,
+    Loki). Request IDs in logs cover the PoC.
+
+### Brief requirements not adopted (owner decision at finalisation)
+
+The owner kept the draft's version of each of these items from
+`concepts_brief.md`:
+
+*   **Tile origin (B6):** the brief's per-tile origin field
+    (`stored | fetched | failed`). The draft uses `state`, `fetchedAt` and
+    `sourceCalls` instead.
+*   **Admin CLI (M20):** a CLI to list and evict tiles. The draft uses a
+    documented SQL `DELETE`.
+*   **Browser smoke test (M9):** a headless-browser test with software
+    WebGL. G1 and G6 are verified manually in a browser instead.
+*   **Quality profile (M10):** an org quality profile copied from Sonar way.
+    The draft uses the default Sonar way profile.
+*   **Photon filters (M13):** Photon `layer`/`osm_tag` result filters. The
+    draft returns a `kind` on each suggestion instead.
+*   **Startup reachability (M6):** reachability checks for the sources in
+    the startup log.
+*   **Provenance (M3):** query hash, bytes and app git SHA on each fetch
+    record. The git SHA is reported by `/version` instead.
+
+--------------------------------------------------------------------------------
+
+## Non-Functional Requirements
+
+*   **Security & Privacy**:
+    *   No user data is stored. Typed addresses go only to Photon and are
+        never logged; logged coordinates are rounded to 3 decimals.
+    *   No secrets in the repository:
+        *   the database password lives in a Kubernetes Secret;
+        *   `SONAR_TOKEN` stays in the environment and in a CI secret.
+    *   `.gitignore` covers `.env*`, `.scannerwork/`, `coverage/`, `dist/`
+        and kubeconfig files.
+    *   Both containers run as non-root, with all capabilities dropped and
+        no privilege escalation; the app container has a read-only root
+        filesystem.
+    *   Per-IP rate limits on `POST /areas` and `GET /geocode`. Coordinates
+        are validated, and the radius is server-side configuration only.
+*   **Performance & Latency** (checked on the PoC address, G7):
+    *   first load at most 60 s;
+    *   a stored area returned within 3 s;
+    *   gzip scene payload at most 3 MB;
+    *   scene build in the browser at most 1.5 s;
+    *   no visible stutter while walking.
+
+    Autocomplete answers in under 1 s when Photon is healthy.
+*   **Resource limits**: app pod 2 GiB memory with DuckDB capped at 1 GB;
+    PostGIS 1 GiB; PVC 2 Gi. At 2 km the PoC stores roughly 20k features,
+    a few MB.
+*   **Rollout & Rollback**:
+    *   Migrations only move forward and only add, or remove what the
+        previous release no longer reads.
+    *   `helm rollback` works because the API accepts a newer schema with a
+        warning.
+    *   The emergency step is truncating the feature and coverage tables,
+        which costs a refetch.
+*   **Licensing**:
+    *   OSM-derived data is ODbL. Overture building sources carry their own
+        licences.
+    *   The screen shows the attribution lines derived from the datasets in
+        the scene.
+    *   Recorded fixtures ship with an ODbL NOTICE.
+
+### Additional Resources
+
+*   `concepts_brief.md`: six-lens review, Stage 0 measurements and decisions
+    D1 to D13.
+*   `docs/egm/brainstorm_context.md`: owner requirements, done criteria,
+    measurements and reference digests.
+*   Reference 1 (owner-supplied): "Legal, Financial, and Technical
+    Constraints of Building Walkable Cel-Shaded Simulations from Google
+    Earth Data".
+*   Reference 2 (owner-supplied): "Architectural Blueprint for
+    High-Performance 3D Open-World Rendering and Navigation in Rust and
+    WebAssembly".
+*   Overture Maps release bucket: `s3://overturemaps-us-west-2/release/`.
+*   Photon: `https://photon.komoot.io` (komoot, open source).
+
+### Future Improvements
+
+*   **Fresher OSM data**: a self-hosted Overpass instance or OSM diffs,
+    behind the same `MapDataSource` port.
+*   **Terrain**: an elevation source (for example Copernicus GLO-30) to
+    replace the flat ground. `groundHeightAt(x, z)` is the single place to
+    change.
+*   **Refresh and eviction**: a time-to-live per tile, using the stored
+    release and fetch time.
+*   **Touch controls** for phones and tablets.
+*   **Shadows and a day-night cycle** with toon-stepped shadow maps.
+
+--------------------------------------------------------------------------------
+
