@@ -12,6 +12,20 @@ module.exports = {
       to: { pathNot: '^packages/core/src' },
     },
     {
+      name: 'domain-not-application',
+      comment: 'Domain code holds the rules; it never depends on the use cases that call it.',
+      severity: 'error',
+      from: { path: '^packages/core/src/[^/]+/domain/' },
+      to: { path: '^packages/core/src/[^/]+/application/' },
+    },
+    {
+      name: 'contexts-independent',
+      comment: 'Geocoding and Cartography share only packages/core/src/shared.',
+      severity: 'error',
+      from: { path: '^packages/core/src/(geocoding|cartography)/' },
+      to: { path: '^packages/core/src/(geocoding|cartography)/', pathNot: '^packages/core/src/$1/' },
+    },
+    {
       name: 'contracts-only-zod',
       comment: 'Wire schemas depend on zod and nothing else.',
       severity: 'error',
