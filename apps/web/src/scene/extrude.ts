@@ -29,8 +29,17 @@ export function normalisePolygon(polygon: LocalPolygon): Vec2[][] {
   return rings;
 }
 
-/** Walls (one quad per ring edge, outward normals) and an earcut roof. Returns triangles added. */
-export function extrudePrism(prism: Prism, out: MeshBuffer): number {
+/** Corners that turn more than this get a vertical contour; gentle bends (curved walls) do not. */
+export const CREASE_ANGLE_DEG = 30;
+const CREASE_COS = Math.cos((CREASE_ANGLE_DEG * Math.PI) / 180);
+/** Lifts the base contour just above the road and ground layers so it stays visible. */
+export const BASE_LINE_LIFT_M = 0.06;
+
+/**
+ * Walls (one quad per ring edge, outward normals) and an earcut roof. When `edges` is
+ * given, contour segments are appended to it as x, y, z pairs. Returns triangles added.
+ */
+export function extrudePrism(prism: Prism, out: MeshBuffer, edges?: number[]): number {
   const before = out.triangles;
   if (prism.topY <= prism.baseY) {
     return 0;
@@ -42,6 +51,9 @@ export function extrudePrism(prism: Prism, out: MeshBuffer): number {
     }
     for (const ring of rings) {
       addWalls(ring, prism.baseY, prism.topY, prism.wallColour, out);
+      if (edges !== undefined) {
+        addPrismEdges(ring, prism.baseY, prism.topY, edges);
+      }
     }
     fillPolygon(rings, prism.topY, prism.roofColour, out);
   }
@@ -85,4 +97,33 @@ export function fillPolygon(rings: readonly (readonly Vec2[])[], y: number, colo
   for (let t = 0; t + 2 < indices.length; t += 3) {
     out.upTriangle(vertex(indices[t]!), vertex(indices[t + 1]!), vertex(indices[t + 2]!), y, colour);
   }
+}
+
+/** Contour lines of one ring: roof outline, base outline, and verticals at sharp corners. */
+export function addPrismEdges(ring: readonly Vec2[], y0: number, y1: number, edges: number[]): void {
+  const n = ring.length;
+  const base = y0 + BASE_LINE_LIFT_M;
+  for (let i = 0; i < n; i += 1) {
+    const previous = ring[(i + n - 1) % n]!;
+    const p = ring[i]!;
+    const q = ring[(i + 1) % n]!;
+    edges.push(p[0], y1, p[1], q[0], y1, q[1]);
+    edges.push(p[0], base, p[1], q[0], base, q[1]);
+    if (isCorner(previous, p, q)) {
+      edges.push(p[0], base, p[1], p[0], y1, p[1]);
+    }
+  }
+}
+
+/** Whether the outline turns at `b` by more than {@link CREASE_ANGLE_DEG}. */
+export function isCorner(a: Vec2, b: Vec2, c: Vec2): boolean {
+  const ux = b[0] - a[0];
+  const uz = b[1] - a[1];
+  const vx = c[0] - b[0];
+  const vz = c[1] - b[1];
+  const lengths = Math.hypot(ux, uz) * Math.hypot(vx, vz);
+  if (lengths < 1e-12) {
+    return false;
+  }
+  return (ux * vx + uz * vz) / lengths < CREASE_COS;
 }

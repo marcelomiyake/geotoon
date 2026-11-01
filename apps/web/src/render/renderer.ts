@@ -1,14 +1,28 @@
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import type { GroundLayer } from '../scene/ground.js';
 import type { MeshData } from '../scene/mesh-buffer.js';
-import { CROWN_COLOUR, MARKER_COLOUR, SKY_COLOUR, TRUNK_COLOUR } from '../scene/palette.js';
+import {
+  CROWN_COLOUR,
+  INK_COLOUR,
+  MARKER_COLOUR,
+  SKY_COLOUR,
+  TRUNK_COLOUR,
+} from '../scene/palette.js';
 import type { BuiltScene } from '../scene/scene-builder.js';
 
 export const EYE_HEIGHT_M = 1.7;
 const FOG_NEAR_M = 150;
 const FOG_FAR_M = 600;
-const OUTLINE_THICKNESS = 0.004;
+/** Silhouette outline (OutlineEffect), as a fraction of the screen height. */
+const OUTLINE_THICKNESS = 0.006;
+/** Contour lines on every building edge, in CSS pixels at any distance (anime ink style). */
+const CONTOUR_WIDTH_PX = 2.2;
+/** Two-tone cel shading: shadow and lit, with no soft mid band. */
+const CEL_STEPS = [150, 255];
 const MARKER_HEIGHT_M = 24;
 
 /** Draw order and depth bias for flat layers: later layers win where they overlap. */
@@ -24,6 +38,7 @@ export class SceneRenderer {
   private readonly effect: OutlineEffect;
   private readonly gradient: THREE.DataTexture;
   private content = new THREE.Group();
+  private contourMaterial: LineMaterial | undefined;
   private readonly resizeObserver: ResizeObserver;
 
   constructor(
@@ -40,10 +55,10 @@ export class SceneRenderer {
 
     this.effect = new OutlineEffect(this.renderer, {
       defaultThickness: OUTLINE_THICKNESS,
-      defaultColor: [0, 0, 0],
+      defaultColor: new THREE.Color(INK_COLOUR).toArray(),
       defaultAlpha: 1,
     });
-    this.gradient = new THREE.DataTexture(new Uint8Array([90, 175, 255]), 3, 1, THREE.RedFormat);
+    this.gradient = new THREE.DataTexture(new Uint8Array(CEL_STEPS), CEL_STEPS.length, 1, THREE.RedFormat);
     this.gradient.minFilter = THREE.NearestFilter;
     this.gradient.magFilter = THREE.NearestFilter;
     this.gradient.generateMipmaps = false;
@@ -51,9 +66,9 @@ export class SceneRenderer {
 
     this.scene.background = new THREE.Color(SKY_COLOUR);
     this.scene.fog = new THREE.Fog(SKY_COLOUR, FOG_NEAR_M, FOG_FAR_M);
-    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+    const sun = new THREE.DirectionalLight(0xfff6e5, 2.6);
     sun.position.set(-0.7, 1, -0.7);
-    this.scene.add(sun, new THREE.HemisphereLight(0xffffff, 0x9c8b6a, 1.1));
+    this.scene.add(sun, new THREE.HemisphereLight(0xffffff, 0xb8a888, 1));
     this.scene.add(this.content);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -68,9 +83,17 @@ export class SceneRenderer {
   setScene(built: BuiltScene): void {
     this.clear();
     const group = new THREE.Group();
+    // Faces are pushed back a little so the contour lines on their edges always win the depth test.
+    const buildingMaterial = this.toonMaterial({
+      vertexColors: true,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    });
     for (const chunk of built.buildings) {
-      group.add(this.mesh(chunk, this.toonMaterial({ vertexColors: true })));
+      group.add(this.mesh(chunk, buildingMaterial));
     }
+    group.add(...this.contours(built.buildingEdges));
     GROUND_ORDER.forEach((layer, index) => {
       const data = built.ground[layer];
       if (data.triangles === 0) {
@@ -109,6 +132,7 @@ export class SceneRenderer {
     const width = Math.max(1, this.host.clientWidth);
     const height = Math.max(1, this.host.clientHeight);
     this.renderer.setSize(width, height, false);
+    this.contourMaterial?.resolution.set(width, height);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
   }
@@ -124,6 +148,23 @@ export class SceneRenderer {
     geometry.setAttribute('color', new THREE.BufferAttribute(data.colors, 3));
     geometry.computeBoundingSphere();
     return new THREE.Mesh(geometry, material);
+  }
+
+  /** Ink lines along every building edge; screen-space width, faded by the fog like the rest. */
+  private contours(edges: readonly Float32Array[]): THREE.Object3D[] {
+    if (edges.length === 0) {
+      return [];
+    }
+    const material = new LineMaterial({
+      color: INK_COLOUR,
+      linewidth: CONTOUR_WIDTH_PX,
+      worldUnits: false,
+      fog: true,
+    });
+    material.resolution.set(Math.max(1, this.host.clientWidth), Math.max(1, this.host.clientHeight));
+    hideOutline(material);
+    this.contourMaterial = material;
+    return edges.map((positions) => new LineSegments2(new LineSegmentsGeometry().setPositions(positions), material));
   }
 
   private trees(built: BuiltScene): THREE.Object3D[] {
