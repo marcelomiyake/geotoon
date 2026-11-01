@@ -89,6 +89,12 @@ h3 {
   color: var(--muted);
 }
 
+/* An <output> is inline by default; lay it out like the paragraph it replaced. */
+#search-status {
+  display: block;
+  margin: 1em 0;
+}
+
 input[type='search'] {
   width: 100%;
   padding: 12px 14px;

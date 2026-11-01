@@ -111,13 +111,13 @@ export function openRing(ring: Ring): Vec2[] {
   const out: Vec2[] = [];
   for (const point of ring) {
     const last = out.at(-1);
-    if (!last || last[0] !== point[0] || last[1] !== point[1]) {
+    if (last?.[0] !== point[0] || last[1] !== point[1]) {
       out.push(point);
     }
   }
   const first = out[0];
   const last = out.at(-1);
-  if (out.length > 1 && first && last && first[0] === last[0] && first[1] === last[1]) {
+  if (out.length > 1 && first !== undefined && first[0] === last?.[0] && first[1] === last[1]) {
     out.pop();
   }
   return out;

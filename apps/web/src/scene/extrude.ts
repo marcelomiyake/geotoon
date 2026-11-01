@@ -132,8 +132,7 @@ export function addPrismEdges(ring: readonly Vec2[], y0: number, y1: number, edg
     const previous = ring[(i + n - 1) % n]!;
     const p = ring[i]!;
     const q = ring[(i + 1) % n]!;
-    edges.push(p[0], y1, p[1], q[0], y1, q[1]);
-    edges.push(p[0], base, p[1], q[0], base, q[1]);
+    edges.push(p[0], y1, p[1], q[0], y1, q[1], p[0], base, p[1], q[0], base, q[1]);
     if (isCorner(previous, p, q)) {
       edges.push(p[0], base, p[1], p[0], y1, p[1]);
     }

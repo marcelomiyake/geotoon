@@ -3,7 +3,7 @@ export type Rgb = readonly [number, number, number];
 
 /** sRGB transfer function, inverted (IEC 61966-2-1). */
 export function srgbToLinear(channel: number): number {
-  return channel <= 0.040_45 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
 }
 
 /**
@@ -19,11 +19,14 @@ export function hexToRgb(hex: number): Rgb {
   ];
 }
 
-/** FNV-1a over UTF-16 code units; deterministic across browsers and Node. */
+/**
+ * FNV-1a over the UTF-16 positions of `text`, reading each position's code point (the same
+ * as the code unit for ASCII ids); deterministic across browsers and Node.
+ */
 export function fnv1a32(text: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
+    hash ^= text.codePointAt(i) ?? 0;
     hash = Math.imul(hash, 0x01000193);
   }
   return hash >>> 0;

@@ -32,17 +32,21 @@ export interface Debounced<A extends unknown[]> {
   cancel(): void;
 }
 
+export interface Timers {
+  set: (callback: () => void, ms: number) => unknown;
+  clear: (handle: unknown) => void;
+}
+
+const BROWSER_TIMERS: Timers = {
+  set: (callback, ms) => setTimeout(callback, ms),
+  clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
 /** Calls `fn` once `waitMs` has passed without another call. */
 export function debounce<A extends unknown[]>(
   fn: (...args: A) => void,
   waitMs: number,
-  timers: {
-    set: (callback: () => void, ms: number) => unknown;
-    clear: (handle: unknown) => void;
-  } = {
-    set: (callback, ms) => setTimeout(callback, ms),
-    clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-  },
+  timers: Timers = BROWSER_TIMERS,
 ): Debounced<A> {
   let handle: unknown;
   const debounced = (...args: A): void => {

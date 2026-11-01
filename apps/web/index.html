@@ -17,7 +17,7 @@
         <input id="search-input" type="search" autocomplete="off" spellcheck="false"
           placeholder="Av. Bolonha, 200, São Paulo — or “lat, lon”" />
         <ul id="search-list"></ul>
-        <p id="search-status" role="status" aria-live="polite"></p>
+        <output id="search-status" aria-live="polite"></output>
         <p class="credit">
           Search by <a href="https://photon.komoot.io" target="_blank" rel="noopener noreferrer">Photon</a>
           using <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> data.
@@ -33,7 +33,7 @@
       </section>
 
       <section class="panel screen-ready">
-        <h2 id="place-label"></h2>
+        <h2 id="place-label">Your map is ready</h2>
         <button id="walk-button" type="button">Click to walk</button>
         <p class="hint">Mouse to look · W A S D or arrows to move · Shift to run · Q / E to turn · Esc to pause</p>
         <button id="ready-new-address-button" type="button" class="secondary">New address</button>
@@ -52,7 +52,7 @@
       </section>
 
       <section class="panel screen-error" role="alert">
-        <h2 id="error-text"></h2>
+        <h2 id="error-text">Something went wrong</h2>
         <p id="error-detail"></p>
         <div class="buttons">
           <button id="retry-button" type="button">Retry</button>
