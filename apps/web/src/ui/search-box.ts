@@ -111,7 +111,7 @@ export class SearchBox {
       this.options.onPick({ ...coordinates, label: `${coordinates.lat}, ${coordinates.lon}` });
       return;
     }
-    const chosen = this.suggestions[this.active >= 0 ? this.active : 0];
+    const chosen = this.suggestions[Math.max(this.active, 0)];
     if (chosen) {
       this.pick(chosen);
     }

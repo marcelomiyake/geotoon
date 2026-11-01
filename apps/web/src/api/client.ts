@@ -91,29 +91,38 @@ export class ApiClient {
     onProgress: (progress: AreaProgress) => void,
     signal?: AbortSignal,
   ): Promise<AreaReady> {
-    const started = this.now();
-    for (;;) {
-      const response = await this.request(`${API_PREFIX}/areas`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ lat, lon }),
-        signal,
-      });
-      const body = await this.json(response);
-      if (response.status === 200) {
-        const ready = AreaReadySchema.safeParse(body);
-        if (!ready.success) {
-          throw new ApiProblem('BAD_RESPONSE', 'The map data had an unexpected shape.');
-        }
-        return ready.data;
+    return this.pollArea({ lat, lon, onProgress, signal, started: this.now() });
+  }
+
+  /** One `POST /areas`; while the area is pending, reports progress, waits and asks again. */
+  private async pollArea(poll: {
+    lat: number;
+    lon: number;
+    onProgress: (progress: AreaProgress) => void;
+    signal: AbortSignal | undefined;
+    started: number;
+  }): Promise<AreaReady> {
+    const response = await this.request(`${API_PREFIX}/areas`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ lat: poll.lat, lon: poll.lon }),
+      signal: poll.signal,
+    });
+    const body = await this.json(response);
+    if (response.status === 200) {
+      const ready = AreaReadySchema.safeParse(body);
+      if (!ready.success) {
+        throw new ApiProblem('BAD_RESPONSE', 'The map data had an unexpected shape.');
       }
-      const pending = AreaPendingSchema.safeParse(body);
-      if (!pending.success) {
-        throw new ApiProblem('BAD_RESPONSE', 'The server returned an unexpected response.');
-      }
-      onProgress(progressOf(pending.data, this.now() - started));
-      await this.sleep(pending.data.pollAfterMs, signal);
+      return ready.data;
     }
+    const pending = AreaPendingSchema.safeParse(body);
+    if (!pending.success) {
+      throw new ApiProblem('BAD_RESPONSE', 'The server returned an unexpected response.');
+    }
+    poll.onProgress(progressOf(pending.data, this.now() - poll.started));
+    await this.sleep(pending.data.pollAfterMs, poll.signal);
+    return this.pollArea(poll);
   }
 
   private async request(path: string, init: RequestInit): Promise<Response> {

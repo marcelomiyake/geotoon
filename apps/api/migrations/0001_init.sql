@@ -17,11 +17,12 @@ CREATE TABLE map_feature (
   overture_release text NOT NULL,
   ingested_at      timestamptz NOT NULL DEFAULT now(),
   attrs            jsonb NOT NULL DEFAULT '{}'::jsonb,
-  CONSTRAINT height_only_on_buildings CHECK (
-    layer = 'building' OR (height_m IS NULL AND num_floors IS NULL AND min_height_m IS NULL)
-  ),
-  CONSTRAINT building_is_polygonal CHECK (
-    layer <> 'building' OR GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON')
+  -- Buildings are polygons, and the only features that carry heights.
+  CONSTRAINT building_shape_and_heights CHECK (
+    CASE WHEN layer = 'building'
+      THEN GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON')
+      ELSE height_m IS NULL AND num_floors IS NULL AND min_height_m IS NULL
+    END
   ),
   CONSTRAINT area_is_polygonal CHECK (
     layer <> 'area' OR GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON')

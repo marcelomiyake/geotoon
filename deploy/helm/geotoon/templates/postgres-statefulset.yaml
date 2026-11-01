@@ -71,7 +71,8 @@ spec:
               mountPath: /var/run/postgresql
       volumes:
         - name: run
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 16Mi
   volumeClaimTemplates:
     - metadata:
         name: data

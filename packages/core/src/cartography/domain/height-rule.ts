@@ -35,11 +35,14 @@ const BANDS: readonly Band[] = [
   { maxAreaM2: Number.POSITIVE_INFINITY, minM: 8, maxM: 12 },
 ];
 
-/** FNV-1a (32-bit) over the UTF-16 code units of `text`. Stable across runs and platforms. */
+/**
+ * FNV-1a (32-bit) over the UTF-16 positions of `text`, reading each position's code point
+ * (identical to the code unit for the ASCII ids Overture uses). Stable across platforms.
+ */
 export function fnv1a32(text: string): number {
   let hash = 0x81_1c_9d_c5;
   for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
+    hash ^= text.codePointAt(i) ?? 0;
     hash = Math.imul(hash, 0x01_00_01_93) >>> 0;
   }
   return hash >>> 0;
@@ -60,7 +63,7 @@ function topHeight(input: HeightInput): { heightM: number; source: HeightSource 
   if (input.numFloors !== undefined && input.numFloors > 0) {
     return { heightM: input.numFloors * FLOOR_HEIGHT_M, source: 'floors' };
   }
-  const band = BANDS.find((b) => input.footprintAreaM2 < b.maxAreaM2) ?? BANDS[BANDS.length - 1];
+  const band = BANDS.find((b) => input.footprintAreaM2 < b.maxAreaM2) ?? BANDS.at(-1);
   const fraction = (fnv1a32(input.id) % 1000) / 1000;
   const raw = band ? band.minM + fraction * (band.maxM - band.minM) : FLOOR_HEIGHT_M;
   return { heightM: Math.round(raw * 10) / 10, source: 'estimated' };

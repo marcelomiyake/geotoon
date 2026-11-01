@@ -3,7 +3,7 @@ import { EARTH_RADIUS_M, toLocal, type GeoPoint } from '../../shared/geo-point.j
 /** Zoom of the coverage grid. Fixed in code: changing it would orphan every stored tile. */
 export const TILE_ZOOM = 16;
 const TILES_PER_AXIS = 2 ** TILE_ZOOM;
-const MAX_MERCATOR_LAT = 85.051_128_78;
+const MAX_MERCATOR_LAT = 85.05112878;
 const DEG = Math.PI / 180;
 
 /** A slippy-map tile at {@link TILE_ZOOM}. */

@@ -27,25 +27,35 @@ export class InProcessScheduler implements IngestionScheduler {
 
   /** Resolves when every queued job has finished. */
   async drain(): Promise<void> {
-    while (this.running) {
-      await this.running;
+    const running = this.running;
+    if (running !== undefined) {
+      await running;
+      await this.drain();
     }
   }
 
   private async drainQueue(): Promise<void> {
     try {
-      for (let job = this.queue.shift(); job !== undefined; job = this.queue.shift()) {
-        try {
-          await this.runner(job);
-        } catch (error) {
-          this.logger.error('ingestion job crashed', {
-            requestId: job.requestId,
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
+      await this.runQueued();
     } finally {
       this.running = undefined;
     }
+  }
+
+  /** Runs queued jobs one after another until the queue is empty. */
+  private async runQueued(): Promise<void> {
+    const job = this.queue.shift();
+    if (job === undefined) {
+      return;
+    }
+    try {
+      await this.runner(job);
+    } catch (error) {
+      this.logger.error('ingestion job crashed', {
+        requestId: job.requestId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    await this.runQueued();
   }
 }

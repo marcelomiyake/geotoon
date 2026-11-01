@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type pg from 'pg';
 import type { Logger } from '@geotoon/core';
+import { inSequence } from '../in-sequence.js';
 
 const MIGRATION_FILE = /^(\d{4})_[\w-]+\.sql$/;
 const LOCK_KEY = 'geotoon-migrations';
@@ -52,24 +53,12 @@ export async function migrate(
     );
     const done = await client.query<{ version: number }>('SELECT version FROM schema_migrations');
     const appliedVersions = new Set(done.rows.map((row) => row.version));
-    const applied: number[] = [];
-    for (const file of files) {
-      if (appliedVersions.has(file.version)) {
-        continue;
-      }
-      const sql = await readFile(file.fullPath, 'utf8');
-      await client.query('BEGIN');
-      try {
-        await client.query(sql);
-        await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [file.version]);
-        await client.query('COMMIT');
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw new Error(`Migration ${file.name} failed`, { cause: error });
-      }
-      applied.push(file.version);
+    const pending = files.filter((file) => !appliedVersions.has(file.version));
+    await inSequence(pending, async (file) => {
+      await applyMigration(client, file);
       logger.info('migration applied', { version: file.version, name: file.name });
-    }
+    });
+    const applied = pending.map((file) => file.version);
     const latest = await client.query<{ version: number | null }>(
       'SELECT max(version) AS version FROM schema_migrations',
     );
@@ -79,6 +68,20 @@ export async function migrate(
   } finally {
     await client.query('SELECT pg_advisory_unlock(hashtext($1))', [LOCK_KEY]).catch(() => undefined);
     client.release();
+  }
+}
+
+/** Runs one migration file and records its version, in a single transaction. */
+async function applyMigration(client: pg.PoolClient, file: MigrationFile): Promise<void> {
+  const sql = await readFile(file.fullPath, 'utf8');
+  await client.query('BEGIN');
+  try {
+    await client.query(sql);
+    await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [file.version]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw new Error(`Migration ${file.name} failed`, { cause: error });
   }
 }
 
