@@ -1,0 +1,17 @@
+GeoToon {{ .Values.image.tag }} is installed in namespace {{ .Release.Namespace }}.
+
+{{- if eq .Values.service.type "NodePort" }}
+
+Open http://localhost:8090 (Kind port mapping to NodePort {{ .Values.service.nodePort }}).
+{{- else }}
+
+Open the app:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "geotoon.fullname" . }} 8080:80
+
+then browse to http://localhost:8080
+{{- end }}
+
+The first visit to an address downloads Overture Maps data for a {{ .Values.area.radiusM }} m radius
+(about a minute; the page shows progress). Later visits to the same area load from PostGIS.
+Uninstalling deletes the PostGIS volume (the cache); the database password Secret is kept.
