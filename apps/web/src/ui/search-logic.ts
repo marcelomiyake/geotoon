@@ -1,3 +1,4 @@
+import { LocalitySchema, type Locality } from '@geotoon/contracts';
 import { ApiProblem } from '../api/client.js';
 
 export const MIN_QUERY_CHARS = 3;
@@ -79,13 +80,32 @@ export function nextIndex(current: number, count: number, key: 'ArrowDown' | 'Ar
 }
 
 /** Reads `?lat=&lon=` and `?debug=1` from a query string. */
-export function readUrlState(search: string): { point?: { lat: number; lon: number }; debug: boolean } {
+export function readUrlState(search: string): { point?: { lat: number; lon: number; locality?: Locality }; debug: boolean } {
   const params = new URLSearchParams(search);
   const debug = params.get('debug') === '1';
   const lat = params.get('lat');
   const lon = params.get('lon');
   const point = lat !== null && lon !== null ? parseLatLon(`${lat},${lon}`) : undefined;
-  return point ? { point, debug } : { debug };
+  const locality = LocalitySchema.safeParse({
+    countryCode: params.get('country')?.trim().toUpperCase(),
+    ...(params.has('city') ? { city: params.get('city') } : {}),
+  });
+  return point ? { point: { ...point, ...(locality.success ? { locality: locality.data } : {}) }, debug } : { debug };
+}
+
+/** Keep the presentation locality when a searched address becomes a shared link. */
+export function areaSearchParams(place: { lat: number; lon: number; locality?: Locality }, debug: boolean): URLSearchParams {
+  const params = new URLSearchParams({ lat: place.lat.toFixed(6), lon: place.lon.toFixed(6) });
+  if (place.locality) {
+    params.set('country', place.locality.countryCode);
+    if (place.locality.city) {
+      params.set('city', place.locality.city);
+    }
+  }
+  if (debug) {
+    params.set('debug', '1');
+  }
+  return params;
 }
 
 /** What the search box says when a lookup fails. */

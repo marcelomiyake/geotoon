@@ -144,6 +144,13 @@ describe('GET /api/v1/geocode', () => {
     expect(response.json()).toMatchObject({ code: 'INVALID_QUERY' });
   });
 
+  it('passes structured locality to the browser', async () => {
+    const locality = { countryCode: 'BR', city: 'São Paulo' };
+    const { app } = await start({ suggest: { execute: () => Promise.resolve([{ ...SUGGESTION, locality }]) } });
+    const response = await app.inject({ url: '/api/v1/geocode?q=Bolonha' });
+    expect(response.json()).toMatchObject({ suggestions: [{ locality }] });
+  });
+
   it('maps a busy geocoder to 429', async () => {
     const busy = new DomainError('GEOCODER_RATE_LIMITED', 'busy', { retryable: true, retryAfterSeconds: 3 });
     const { app } = await start({ suggest: { execute: () => Promise.reject(busy) } });

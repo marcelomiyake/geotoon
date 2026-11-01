@@ -34,6 +34,7 @@ describe('PhotonGeocoder', () => {
         label: 'Peg Pese Hortifruti, Avenida Bolonha, 200, Jaguaré, São Paulo, Brasil',
         point: { lat: -23.548_581_7, lon: -46.746_914_4 },
         kind: 'house',
+        locality: { countryCode: 'BR', city: 'São Paulo' },
       },
     ]);
     const [url, init] = fetchImpl.mock.calls[0]!;
@@ -68,6 +69,18 @@ describe('PhotonGeocoder', () => {
     const { photon } = geocoder(() => Promise.resolve(new Response('slow down', { status: 429, headers: { 'retry-after': '7' } })));
     const error = await failure(photon.search({ query: 'Bolonha', limit: 5 }));
     expect(error).toMatchObject({ code: 'GEOCODER_RATE_LIMITED', retryable: true, retryAfterSeconds: 7 });
+  });
+
+  it.each([
+    [{ countrycode: ' br ', city: ' Recife ' }, { countryCode: 'BR', city: 'Recife' }],
+    [{ countrycode: 'BR', type: 'city', name: 'São Paulo' }, { countryCode: 'BR', city: 'São Paulo' }],
+    [{ countrycode: 'JP', city: ' ' }, { countryCode: 'JP' }],
+    [{ countrycode: 'BRA', city: 'Recife' }, undefined],
+    [{ city: 'São Paulo' }, undefined],
+  ])('maps structured locality from %j without parsing the label', async (properties, expected) => {
+    const body = { features: [{ geometry: { type: 'Point', coordinates: [0, 0] }, properties: { name: 'Place', ...properties } }] };
+    const { photon } = geocoder(() => Promise.resolve(Response.json(body)));
+    expect((await photon.search({ query: 'Place', limit: 5 }))[0]?.locality).toEqual(expected);
   });
 
   it('ignores a Retry-After header that is not a positive integer', async () => {

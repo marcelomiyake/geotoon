@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiClient, ApiProblem, abortableSleep, type AreaProgress } from '../src/api/client.js';
 import {
   debounce,
+  areaSearchParams,
   nextIndex,
   parseLatLon,
   readUrlState,
@@ -218,6 +219,17 @@ describe('search logic', () => {
     expect(readUrlState('?lat=-23.5&lon=-46.7&debug=1')).toEqual({ point: { lat: -23.5, lon: -46.7 }, debug: true });
     expect(readUrlState('?lat=abc&lon=1')).toEqual({ debug: false });
     expect(readUrlState('')).toEqual({ debug: false });
+  });
+
+  it('round-trips country and city through shared links and ignores invalid locality', () => {
+    const place = { lat: -23.5, lon: -46.7, locality: { countryCode: 'BR', city: 'São Paulo' } };
+    const params = areaSearchParams(place, true);
+    expect(readUrlState(`?${params.toString()}`)).toEqual({ point: place, debug: true });
+    expect(readUrlState('?lat=1&lon=2&country=br')).toEqual({ point: { lat: 1, lon: 2, locality: { countryCode: 'BR' } }, debug: false });
+    expect(readUrlState('?lat=1&lon=2&country=BR&city=')).toEqual({ point: { lat: 1, lon: 2 }, debug: false });
+    expect(readUrlState('?lat=1&lon=2&country=Brazil')).toEqual({ point: { lat: 1, lon: 2 }, debug: false });
+    expect(areaSearchParams({ lat: 1, lon: 2 }, false).toString()).toBe('lat=1.000000&lon=2.000000');
+    expect(areaSearchParams({ lat: 1, lon: 2, locality: { countryCode: 'BR' } }, false).get('city')).toBeNull();
   });
 
   it('explains search failures', () => {

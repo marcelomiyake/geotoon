@@ -73,13 +73,21 @@ export interface BuildingColours {
   readonly tile: Rgb;
 }
 
+export interface BuildingPalette {
+  readonly walls: readonly Rgb[];
+  readonly roofs: readonly Rgb[];
+  readonly tiles: readonly Rgb[];
+}
+
+export const DEFAULT_BUILDING_PALETTE: BuildingPalette = { walls: WALL_COLOURS, roofs: ROOF_COLOURS, tiles: TILE_COLOURS };
+
 /** Stable colours per building id, so a building looks the same on every visit. */
-export function buildingColours(id: string): BuildingColours {
+export function buildingColours(id: string, palette: BuildingPalette = DEFAULT_BUILDING_PALETTE): BuildingColours {
   const hash = fnv1a32(id);
   return {
-    wall: WALL_COLOURS[hash % WALL_COLOURS.length] ?? WALL_COLOURS[0]!,
-    roof: ROOF_COLOURS[(hash >>> 8) % ROOF_COLOURS.length] ?? ROOF_COLOURS[0]!,
-    tile: TILE_COLOURS[(hash >>> 16) % TILE_COLOURS.length] ?? TILE_COLOURS[0]!,
+    wall: palette.walls[hash % palette.walls.length]!,
+    roof: palette.roofs[(hash >>> 8) % palette.roofs.length]!,
+    tile: palette.tiles[(hash >>> 16) % palette.tiles.length]!,
   };
 }
 
