@@ -3,7 +3,7 @@ import { CollisionIndex } from './collision.js';
 import { type LocalPolygon, extrudePrism, normalisePolygon } from './extrude.js';
 import { type GroundLayer, LAYER_HEIGHT_M, addArea, addGroundDisc, layerForArea } from './ground.js';
 import { MeshBuffer, type MeshData, type Vec2 } from './mesh-buffer.js';
-import { ROOF_SHADE, buildingColour, lineColour } from './palette.js';
+import { buildingColours, lineColour } from './palette.js';
 import { type Projection, createProjection } from './projection.js';
 import { addRibbon } from './ribbons.js';
 import { type TreeInstances, buildTrees } from './trees.js';
@@ -63,14 +63,14 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
       buildingBuffer = new MeshBuffer();
       chunks.set(key, buildingBuffer);
     }
-    const wall = buildingColour(building.id);
+    const colours = buildingColours(building.id);
     extrudePrism(
       {
         polygons,
         baseY: building.minHeightM,
         topY: building.heightM,
-        wallColour: wall,
-        roofColour: [wall[0] * ROOF_SHADE, wall[1] * ROOF_SHADE, wall[2] * ROOF_SHADE],
+        wallColour: colours.wall,
+        roofColour: colours.roof,
       },
       buildingBuffer,
     );

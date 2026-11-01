@@ -2,13 +2,22 @@ import * as THREE from 'three';
 import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import type { GroundLayer } from '../scene/ground.js';
 import type { MeshData } from '../scene/mesh-buffer.js';
-import { CROWN_COLOUR, MARKER_COLOUR, SKY_COLOUR, TRUNK_COLOUR } from '../scene/palette.js';
+import {
+  CROWN_COLOUR,
+  INK_COLOUR,
+  MARKER_COLOUR,
+  SKY_COLOUR,
+  TRUNK_COLOUR,
+} from '../scene/palette.js';
 import type { BuiltScene } from '../scene/scene-builder.js';
 
 export const EYE_HEIGHT_M = 1.7;
 const FOG_NEAR_M = 150;
 const FOG_FAR_M = 600;
-const OUTLINE_THICKNESS = 0.004;
+/** Silhouette outline (OutlineEffect), as a fraction of the screen height. */
+const OUTLINE_THICKNESS = 0.006;
+/** Two-tone cel shading: shadow and lit, with no soft mid band. */
+const CEL_STEPS = [150, 255];
 const MARKER_HEIGHT_M = 24;
 
 /** Draw order and depth bias for flat layers: later layers win where they overlap. */
@@ -40,10 +49,10 @@ export class SceneRenderer {
 
     this.effect = new OutlineEffect(this.renderer, {
       defaultThickness: OUTLINE_THICKNESS,
-      defaultColor: [0, 0, 0],
+      defaultColor: new THREE.Color(INK_COLOUR).toArray(),
       defaultAlpha: 1,
     });
-    this.gradient = new THREE.DataTexture(new Uint8Array([90, 175, 255]), 3, 1, THREE.RedFormat);
+    this.gradient = new THREE.DataTexture(new Uint8Array(CEL_STEPS), CEL_STEPS.length, 1, THREE.RedFormat);
     this.gradient.minFilter = THREE.NearestFilter;
     this.gradient.magFilter = THREE.NearestFilter;
     this.gradient.generateMipmaps = false;
@@ -51,9 +60,9 @@ export class SceneRenderer {
 
     this.scene.background = new THREE.Color(SKY_COLOUR);
     this.scene.fog = new THREE.Fog(SKY_COLOUR, FOG_NEAR_M, FOG_FAR_M);
-    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+    const sun = new THREE.DirectionalLight(0xfff6e5, 2.6);
     sun.position.set(-0.7, 1, -0.7);
-    this.scene.add(sun, new THREE.HemisphereLight(0xffffff, 0x9c8b6a, 1.1));
+    this.scene.add(sun, new THREE.HemisphereLight(0xffffff, 0xb8a888, 1));
     this.scene.add(this.content);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
