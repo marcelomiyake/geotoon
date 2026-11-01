@@ -135,8 +135,6 @@ export const TRIM_COLOUR: Rgb = hexToRgb(0xf3eee2);
 /** These are hex values for `THREE.Color`, which applies colour management itself. */
 export const SKY_ZENITH_COLOUR = 0x22b4ec;
 export const SKY_HORIZON_COLOUR = 0xc8eef8;
-/** Kept until the renderer draws the painted sky. */
-export const SKY_COLOUR = 0x5cc8ff;
 export const CLOUD_SHADE_COLOUR = 0xb9cde6;
 export const MOUNTAIN_COLOUR = 0x7fb9c4;
 export const TRUNK_COLOUR = 0x8b5a2b;
