@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "geotoon.fullname" . }}
+  labels:
+    {{- include "geotoon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "geotoon.appSelector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "geotoon.labels" . | nindent 8 }}
+        {{- include "geotoon.appSelector" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Waits for PostgreSQL so the app's own 60 s connection retry is not spent on startup.
+        - name: wait-for-postgres
+          image: {{ .Values.postgresql.image }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - until pg_isready -h {{ include "geotoon.postgresql" . }} -p 5432 -t 2; do echo waiting for postgres; sleep 2; done
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            readOnlyRootFilesystem: true
+            {{- include "geotoon.restrictedContainer" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: GIT_SHA
+              value: {{ .Values.image.tag | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
+            - name: DATABASE_HOST
+              value: {{ include "geotoon.postgresql" . }}
+            - name: DATABASE_PORT
+              value: "5432"
+            - name: DATABASE_NAME
+              value: {{ .Values.postgresql.database | quote }}
+            - name: DATABASE_USER
+              value: {{ .Values.postgresql.user | quote }}
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "geotoon.secret" . }}
+                  key: password
+            - name: OVERTURE_BASE_URL
+              value: {{ .Values.overture.baseUrl | quote }}
+            - name: OVERTURE_RELEASE
+              value: {{ .Values.overture.release | quote }}
+            - name: OVERTURE_QUERY_TIMEOUT_S
+              value: {{ .Values.overture.queryTimeoutSeconds | quote }}
+            - name: AREA_RADIUS_M
+              value: {{ .Values.area.radiusM | quote }}
+            - name: AREA_RADIUS_MAX_M
+              value: "2000"
+            - name: PHOTON_URL
+              value: {{ .Values.photon.url | quote }}
+            - name: DUCKDB_MEMORY_LIMIT
+              value: {{ .Values.duckdb.memoryLimit | quote }}
+            - name: DUCKDB_THREADS
+              value: {{ .Values.duckdb.threads | quote }}
+            - name: RATE_LIMIT_AREAS_PER_MIN
+              value: {{ .Values.rateLimits.areasPerMinute | quote }}
+            - name: RATE_LIMIT_GEOCODE_PER_MIN
+              value: {{ .Values.rateLimits.geocodePerMinute | quote }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            {{- include "geotoon.restrictedContainer" . | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi

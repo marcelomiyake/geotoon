@@ -1,0 +1,5 @@
+# Optional: expose the app on http://localhost:8090 through the Kind port mapping in
+# deploy/kind/kind-config.yaml instead of kubectl port-forward.
+service:
+  type: NodePort
+  nodePort: 30080

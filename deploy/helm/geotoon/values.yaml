@@ -1,0 +1,57 @@
+# Image built by `make images` and loaded into Kind by `make kind-load`.
+image:
+  repository: geotoon-app
+  tag: dev
+  pullPolicy: IfNotPresent
+
+service:
+  # ClusterIP plus `kubectl port-forward svc/geotoon 8080:80` (see NOTES.txt).
+  # values-kind.yaml switches to NodePort 30080 for the Kind port mapping.
+  type: ClusterIP
+  port: 80
+  nodePort: 30080
+
+# Radius of the area loaded around each address, in metres (100-2000).
+area:
+  radiusM: 2000
+
+overture:
+  baseUrl: s3://overturemaps-us-west-2/release
+  release: "2026-10-21.0"
+  queryTimeoutSeconds: 120
+
+photon:
+  url: https://photon.komoot.io
+
+duckdb:
+  memoryLimit: 1GB
+  threads: 4
+
+rateLimits:
+  areasPerMinute: 30
+  geocodePerMinute: 60
+
+logLevel: info
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+postgresql:
+  image: postgis/postgis:17-3.6@sha256:1ac10b2551ba84ae05db8e7da477afcd0a3fede99bcb7705da2ee157390cb095
+  database: geotoon
+  user: geotoon
+  storage: 2Gi
+  # Empty uses the cluster default StorageClass.
+  storageClassName: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi

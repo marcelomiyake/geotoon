@@ -50,6 +50,7 @@ export class IngestTiles {
         ...fields,
         errorClass,
         message: error instanceof Error ? error.message : String(error),
+        cause: causeMessage(error),
         durationMs: clock.now().getTime() - startedAt,
       });
     }
@@ -65,4 +66,13 @@ export class IngestTiles {
     }));
     await coverage.markFailed(failed, job.owner, errorClass);
   }
+}
+
+/** First line of the underlying error, so operators see why a source call failed. */
+function causeMessage(error: unknown): string | undefined {
+  const cause = error instanceof Error ? error.cause : undefined;
+  if (!(cause instanceof Error)) {
+    return undefined;
+  }
+  return cause.message.split('\n')[0]?.slice(0, 300);
 }

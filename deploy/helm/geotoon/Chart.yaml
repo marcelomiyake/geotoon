@@ -1,0 +1,9 @@
+apiVersion: v2
+name: geotoon
+description: Walkable cel-shaded 3D map of any address, built from open map data (app + PostGIS).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/marcelomiyake/geotoon
+sources:
+  - https://github.com/marcelomiyake/geotoon

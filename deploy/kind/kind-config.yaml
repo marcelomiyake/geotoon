@@ -1,0 +1,12 @@
+# Single-node Kind cluster for GeoToon. The port mapping is used only with values-kind.yaml
+# (NodePort 30080 -> http://localhost:8090); the default install uses kubectl port-forward.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: geotoon
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8090
+        listenAddress: 127.0.0.1
+        protocol: TCP
