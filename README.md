@@ -6,6 +6,13 @@ for a 2 km radius from Overture Maps into PostGIS, and draws them in the browser
 Three.js in an anime street style: pastel walls with windows, clay-tile roofs, ink
 contours, crisp blue shadows, utility poles and a painted sky.
 
+The initial view opens at **Av. Paulista, 1578 — MASP, São Paulo**. Choose **New address**
+to explore somewhere else; shared coordinates still override the initial location.
+Where SRTM elevations are available, the landscape has geographical relief: streets,
+parks, buildings, trees and signs follow the terrain, and the walking camera follows
+the slopes. Elevation is shown at its natural scale on a 50 m grid, smoothed over a
+250 m neighbourhood to reduce small raster artifacts.
+
 Address searches also carry the country and city into the visual style. Brazil uses
 plaster/concrete colours, clay and slab roofs, and wider windows with slim frames;
 São Paulo has a city override with more slab roofs and blue street-name panels inspired
@@ -19,9 +26,9 @@ New country profiles and city overrides belong in `apps/web/src/scene/architectu
 they can change palettes, roof mix, window spacing/proportions and sign design without
 changing stored tiles or making additional map-source calls.
 
-![Street-level tour of Avenida Bolonha, São Paulo: blue street-name signs, local building colours and windows, utility poles and wires](docs/images/street-drive.gif)
+![Street-level tour around Av. Paulista, 1578, São Paulo: blue street-name signs, local façades and geographical relief](docs/images/street-drive.gif)
 
-![Aerial orbit around Av. Bolonha, 200, São Paulo: local façades, concrete slabs and clay roofs in the cel-shaded neighbourhood](docs/images/aerial-orbit.gif)
+![Aerial orbit around Av. Paulista, 1578 — MASP, São Paulo: the cel-shaded city and its geographical relief](docs/images/aerial-orbit.gif)
 
 Recorded from the local Kind deployment with the São Paulo profile: a 10-second street
 tour and a 6-second aerial orbit. Both animations retain the map-data attribution.
@@ -51,6 +58,7 @@ The app container needs HTTPS access to:
 
 - `overturemaps-us-west-2.s3.amazonaws.com`: Overture Maps data (public bucket, no account).
 - `photon.komoot.io`: address search.
+- `s3.amazonaws.com`: Mapzen Terrarium elevation tiles (SRTM sources), cached in PostGIS.
 
 The image build also downloads the DuckDB `httpfs` extension from `extensions.duckdb.org`.
 
@@ -60,9 +68,9 @@ The image build also downloads the DuckDB `httpfs` extension from `extensions.du
 make kind-up images kind-load deploy open
 ```
 
-Then open <http://localhost:8080>, type an address (for example
-`Av. Bolonha, 200, São Paulo`) and pick a suggestion. You can also type coordinates as
-`lat, lon`. Click **Click to walk**: the mouse looks around, W A S D or the arrow keys
+Then open <http://localhost:8080>; the map starts at `Av. Paulista, 1578, São Paulo`.
+Choose **New address** to search another address or enter coordinates as `lat, lon`.
+Click **Click to walk**: the mouse looks around, W A S D or the arrow keys
 move at about 22 km/h (bicycle speed), Shift moves at about 54 km/h (car speed), Q and E
 turn, Esc pauses.
 
@@ -91,7 +99,7 @@ To reach the app on <http://localhost:8090> through the Kind port mapping instea
 | `make sonar` | Run the SonarCloud scan (needs `SONAR_TOKEN`; run `make test` first for coverage). |
 | `make kind-down` | Delete the Kind cluster. |
 
-`make test` is the test command. It runs 242 tests in 18 files: the domain and use cases,
+`make test` is the test command. It covers the domain and use cases,
 the API contracts, the HTTP API, the Overture and Photon adapters against recorded
 fixtures, the PostGIS adapters and the full area flow against a real PostGIS, and the
 scene geometry the browser draws.
@@ -131,7 +139,7 @@ make open            # in one terminal
 make verify-cache    # in another
 ```
 
-The script requests the Av. Bolonha area until it is ready, requests it again, and fails
+The script requests the Av. Paulista area until it is ready, requests it again, and fails
 unless the second answer is `200`, `ready`, `sourceCalls: 0` with no incomplete tile.
 In the browser, add `&debug=1` to the URL to see `sourceCalls` and the tile counts.
 
@@ -147,6 +155,11 @@ Map data is not covered by that licence:
   Google Open Buildings (CC BY 4.0), Microsoft ML Buildings (ODbL 1.0) and Esri Community
   Maps (CC BY 4.0); some street segments are data from TomTom.
 - Address search: [Photon](https://photon.komoot.io) by komoot, with OpenStreetMap data.
+- Relief: SRTM terrain data courtesy of the U.S. Geological Survey, distributed by
+  [Mapzen Terrain Tiles](https://github.com/tilezen/joerd/blob/master/docs/attribution.md).
+  Elevation rasters have a separate persistent PostGIS cache. Unsupported DEM sources,
+  missing data or source failures retain the flat map. `sourceCalls` counts Overture
+  ingestion calls; it does not count elevation tile downloads.
 
 The app shows the attribution Overture asks for, for each source present in the data it draws. The test fixtures in `fixtures/` are
 third-party data; see [fixtures/NOTICE](fixtures/NOTICE).

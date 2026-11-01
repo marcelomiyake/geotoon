@@ -6,6 +6,7 @@ import { isInsideRing, nearestOnSegment } from './geometry.js';
 export const SPAWN_MAX_STREET_DISTANCE_M = 150;
 const STEP_OUTSIDE_M = 2;
 const ORIGIN: LocalPoint = { x: 0, y: 0 };
+type LocalPolygon = readonly (readonly LocalPoint[])[];
 
 export interface Spawn {
   readonly position: Position;
@@ -23,8 +24,9 @@ export function chooseSpawn(
   buildings: readonly StoredBuilding[],
 ): Spawn {
   const project = (p: Position): LocalPoint => toLocal(address, p[0], p[1]);
+  const blockers = blockingFootprints(buildings, project);
   const spawn =
-    nearestStreetPoint(lines, project) ?? stepOutOfBuilding(buildings, project) ?? ORIGIN;
+    nearestStreetPoint(lines, project, blockers) ?? stepOutOfBuilding(buildings, project) ?? ORIGIN;
   const headingDeg = (Math.atan2(-spawn.x, -spawn.y) * 180) / Math.PI;
   return {
     position: fromLocal(address, spawn),
@@ -35,6 +37,7 @@ export function chooseSpawn(
 function nearestStreetPoint(
   lines: readonly MapLine[],
   project: (p: Position) => LocalPoint,
+  blockers: readonly LocalPolygon[],
 ): LocalPoint | undefined {
   let best: LocalPoint | undefined;
   let bestDistance = SPAWN_MAX_STREET_DISTANCE_M;
@@ -43,9 +46,7 @@ function nearestStreetPoint(
       continue;
     }
     for (const part of line.coords) {
-      const points = part.map(project);
-      for (let i = 1; i < points.length; i++) {
-        const candidate = nearestOnSegment(ORIGIN, points[i - 1] ?? ORIGIN, points[i] ?? ORIGIN);
+      for (const candidate of streetCandidates(part, project, blockers)) {
         const distance = Math.hypot(candidate.x, candidate.y);
         if (distance <= bestDistance) {
           best = candidate;
@@ -55,6 +56,34 @@ function nearestStreetPoint(
     }
   }
   return best;
+}
+
+function streetCandidates(
+  part: readonly Position[], project: (p: Position) => LocalPoint, blockers: readonly LocalPolygon[],
+): LocalPoint[] {
+  const points = part.map(project);
+  return points.slice(1).flatMap((q, i) => {
+    const p = points[i] ?? ORIGIN;
+    return [nearestOnSegment(ORIGIN, p, q), p, q];
+  }).filter((p) => Math.hypot(p.x, p.y) <= SPAWN_MAX_STREET_DISTANCE_M && !insideBuilding(p, blockers));
+}
+
+function insideBuilding(point: LocalPoint, polygons: readonly LocalPolygon[]): boolean {
+  return polygons.some((rings) => isInsideRing(point, rings[0] ?? [])
+    && !rings.slice(1).some((ring) => isInsideRing(point, ring)));
+}
+
+/** Only nearby ground-level footprints can block a street candidate. Courtyards stay clear. */
+function blockingFootprints(buildings: readonly StoredBuilding[], project: (p: Position) => LocalPoint): LocalPolygon[] {
+  const polygons = buildings.filter((building) => (building.minHeightM ?? 0) < 2)
+    .flatMap((building) => building.footprint.map((polygon) => polygon.map((ring) => ring.map(project))));
+  return polygons.filter((rings) => {
+    const outer = rings[0] ?? [];
+    return outer.some((p) => p.x <= SPAWN_MAX_STREET_DISTANCE_M)
+      && outer.some((p) => p.x >= -SPAWN_MAX_STREET_DISTANCE_M)
+      && outer.some((p) => p.y <= SPAWN_MAX_STREET_DISTANCE_M)
+      && outer.some((p) => p.y >= -SPAWN_MAX_STREET_DISTANCE_M);
+  });
 }
 
 function stepOutOfBuilding(

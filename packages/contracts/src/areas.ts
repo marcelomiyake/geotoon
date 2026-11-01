@@ -57,6 +57,15 @@ export const AttributionSchema = z.object({
   url: z.string(),
 });
 
+export const TerrainGridSchema = z.object({
+  originM: z.number(),
+  spacingM: z.number().positive(),
+  size: z.number().int().min(2).max(129),
+  datumM: z.number(),
+  heights: z.array(z.number()).max(129 * 129),
+}).refine((grid) => grid.heights.length === grid.size * grid.size, 'Terrain grid dimensions do not match');
+export type TerrainGrid = z.infer<typeof TerrainGridSchema>;
+
 export const SceneSchema = z.object({
   buildings: z.array(SceneBuildingSchema),
   lines: z.array(SceneLineSchema),
@@ -64,6 +73,7 @@ export const SceneSchema = z.object({
   trees: z.array(PositionSchema),
   spawn: SpawnSchema,
   attribution: z.array(AttributionSchema),
+  terrain: TerrainGridSchema.optional(),
 });
 
 const envelope = {

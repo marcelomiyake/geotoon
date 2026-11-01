@@ -41,6 +41,7 @@ afterAll(async () => {
 async function startApp(): Promise<{ app: Application; source: () => CountingMapDataSource }> {
   let counting: CountingMapDataSource | undefined;
   const app = await compose(config, pino({ level: 'silent' }), {
+    terrain: { readWithin: () => Promise.resolve(undefined) },
     source: (duck) => {
       counting = new CountingMapDataSource(new OvertureMapDataSource(duck, config.overture));
       return counting;
@@ -126,7 +127,7 @@ describe('area request flow (design goal G2)', () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({
         ready: true,
-        checks: { schema: 'ok: v1', duckdb: 'ok: httpfs loaded' },
+        checks: { schema: 'ok: v2', duckdb: 'ok: httpfs loaded' },
       });
     } finally {
       await app.close();

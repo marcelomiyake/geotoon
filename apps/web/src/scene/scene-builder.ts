@@ -22,6 +22,7 @@ import {
 } from './street.js';
 import { type TreeInstances, buildTrees } from './trees.js';
 import { type StreetSign, buildStreetSigns } from './street-signs.js';
+import { Terrain } from './terrain.js';
 
 /** The ground disc reaches this far past the area radius. */
 export const GROUND_MARGIN_M = 50;
@@ -30,6 +31,7 @@ const GROUND_SEGMENTS = 96;
 export const CHUNK_SIZE_M = 250;
 
 export interface BuiltScene {
+  readonly terrain: Terrain;
   readonly architecture: ArchitectureStyle;
   readonly streetSigns: readonly StreetSign[];
   readonly projection: Projection;
@@ -78,8 +80,9 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     polygon.map((ring) => ring.map(([lon, lat]) => projection.toLocal(lon!, lat!)));
 
   const collision = new CollisionIndex();
+  const terrain = new Terrain(scene.terrain);
   const architecture = architectureFor(area.locality);
-  const chunks = addBuildings(scene.buildings, project, collision, architecture);
+  const chunks = addBuildings(scene.buildings, project, collision, architecture, terrain);
   const streetSigns = buildStreetSigns(scene.lines, projection, area.radiusM, collision);
 
   const ground = Object.fromEntries(GROUND_LAYERS.map((layer) => [layer, new MeshBuffer()])) as Record<
@@ -95,7 +98,7 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
   for (const line of scene.lines) {
     for (const part of line.coords) {
       const points: Vec2[] = part.map(([lon, lat]) => projection.toLocal(lon, lat));
-      addLine(line.kind, line.widthM, points, ground, poles, wires);
+      addLine(line.kind, line.widthM, points, ground, poles, wires, terrain);
     }
   }
 
@@ -108,13 +111,15 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     .map((chunk) => new Float32Array(chunk.edges));
   const outlineSegments = buildingEdges.reduce((sum, edges) => sum + edges.length / 6, 0);
   const groundData = Object.fromEntries(
-    GROUND_LAYERS.map((layer) => [layer, ground[layer].toMeshData()]),
+    GROUND_LAYERS.map((layer) => [layer, layer === 'base' && terrain.grid !== undefined
+      ? terrain.ground() : terrain.drape(ground[layer].toMeshData())]),
   ) as Record<GroundLayer, MeshData>;
   const triangles = [...buildings, ...Object.values(groundData)].reduce(
     (sum, mesh) => sum + mesh.triangles,
     0,
   );
   return {
+    terrain,
     architecture,
     streetSigns,
     projection,
@@ -151,6 +156,7 @@ function addBuildings(
   project: (polygon: readonly (readonly (readonly number[])[])[]) => LocalPolygon,
   collision: CollisionIndex,
   architecture: ArchitectureStyle,
+  terrain: Terrain,
 ): Map<string, BuildingChunk> {
   const chunks = new Map<string, BuildingChunk>();
   for (const building of buildings) {
@@ -166,11 +172,14 @@ function addBuildings(
       chunks.set(key, chunk);
     }
     const { colours, pitched } = buildingAppearance(building, architecture);
+    const heights = polygons.flat(2).map(([x, z]) => terrain.heightAt(x, z));
+    const low = heights.reduce((a, b) => Math.min(a, b), Number.POSITIVE_INFINITY);
+    const high = heights.reduce((a, b) => Math.max(a, b), Number.NEGATIVE_INFINITY);
     extrudePrism(
       {
         polygons,
-        baseY: building.minHeightM,
-        topY: building.heightM,
+        baseY: (building.minHeightM < 0.5 ? low : high) + building.minHeightM,
+        topY: high + building.heightM,
         wallColour: colours.wall,
         roofColour: colours.roof,
         windowSlotM: architecture.facade.slotM,
@@ -197,6 +206,7 @@ function addLine(
   ground: Record<GroundLayer, MeshBuffer>,
   poles: number[],
   wires: number[],
+  terrain: Terrain,
 ): void {
   if (kind === 'stream' || kind === 'river') {
     addRibbon(points, widthM, LAYER_HEIGHT_M.water + 0.005, lineColour(kind), ground.water);
@@ -216,7 +226,7 @@ function addLine(
     for (const pole of placed) {
       poles.push(pole.x, pole.z, pole.angle);
     }
-    addWires(placed, wires);
+    addWires(placed, wires, (x, z) => terrain.heightAt(x, z));
   }
 }
 

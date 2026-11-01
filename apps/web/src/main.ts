@@ -6,6 +6,7 @@ import { buildScene, type BuiltScene } from './scene/scene-builder.js';
 import { Overlays, areaErrorMessage } from './ui/overlays.js';
 import { SearchBox, type PickedPlace } from './ui/search-box.js';
 import { areaSearchParams, readUrlState } from './ui/search-logic.js';
+import { initialPlace } from './ui/initial-place.js';
 
 interface DebugState {
   requestId: string;
@@ -98,6 +99,7 @@ function updateDebug(renderer: SceneRenderer): void {
       renderer.camera.rotation.set((pitchDeg * Math.PI) / 180, (-headingDeg * Math.PI) / 180, 0, 'YXZ'),
     moveTo: (x: number, y: number, z: number) => renderer.camera.position.set(x, y, z),
     renderer,
+    terrain: built?.terrain,
   };
 }
 
@@ -183,12 +185,7 @@ function start(): void {
       void openArea(lastPlace);
     }
   });
-  if (urlState.point) {
-    void openArea({ ...urlState.point, label: `${urlState.point.lat}, ${urlState.point.lon}` });
-  } else {
-    overlays.show('search');
-    search.focus();
-  }
+  void openArea(initialPlace(urlState.point));
 }
 
 start();

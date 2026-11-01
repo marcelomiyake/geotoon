@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -13,15 +13,16 @@ import {
   type TileKey,
 } from '@geotoon/core';
 import type pg from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, inject, it, vi } from 'vitest';
 import type { DuckDbClient } from '../../src/adapters/overture/duckdb-client.js';
 import { OvertureMapDataSource } from '../../src/adapters/overture/overture-map-data-source.js';
 import { PgFeatureReader } from '../../src/adapters/postgres/feature-reader.js';
 import { PgFeatureStore } from '../../src/adapters/postgres/feature-store.js';
 import { migrate } from '../../src/adapters/postgres/migrator.js';
 import { PgTileCoverageRepository } from '../../src/adapters/postgres/tile-coverage-repository.js';
+import { PgTerrainReader } from '../../src/adapters/postgres/terrain-reader.js';
 import { DEFAULT_MIGRATIONS_DIR } from '../../src/composition-root.js';
-import { FIXTURE_RELEASE, OVERTURE_FIXTURE, POC, openDuck } from '../support.js';
+import { FIXTURES, FIXTURE_RELEASE, OVERTURE_FIXTURE, POC, openDuck } from '../support.js';
 import { silentLogger, startPostgis, type Postgis } from './postgis.js';
 
 let postgis: Postgis;
@@ -44,18 +45,38 @@ async function truncate(): Promise<void> {
   await pool.query('TRUNCATE map_feature, tile_coverage');
 }
 
+describe('persistent elevation cache', () => {
+  it('serves a new reader after a restart without contacting the elevation source', async () => {
+    await pool.query('TRUNCATE terrain_tile');
+    const png = readFileSync(path.join(FIXTURES, 'terrain/srtm-12-1517-2323.png'));
+    const fetchImpl = vi.fn<typeof fetch>(() => Promise.resolve(new Response(Uint8Array.from(png), {
+      headers: { 'x-amz-meta-x-imagery-sources': 'srtm/S24W047.tif' },
+    })));
+    const point = { lat: -23.561496, lon: -46.655968 };
+    const first = await new PgTerrainReader(pool, silentLogger, fetchImpl).readWithin(point, 100);
+    expect(first).toBeDefined();
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    const forbidden = vi.fn<typeof fetch>(() => Promise.reject(new Error('Network must not be used')));
+    const repeated = await new PgTerrainReader(pool, silentLogger, forbidden).readWithin(point, 100);
+    expect(repeated).toEqual(first);
+    expect(forbidden).not.toHaveBeenCalled();
+    const stored = await pool.query<{ n: number }>('SELECT count(*)::int AS n FROM terrain_tile');
+    expect(stored.rows[0]?.n).toBe(1);
+  });
+});
+
 describe('migrator', () => {
   it('applies the schema once and is idempotent', async () => {
     await pool.query('CREATE DATABASE migrate_fresh');
     const fresh = postgis.pool('migrate_fresh');
     const first = await migrate(fresh, DEFAULT_MIGRATIONS_DIR, silentLogger);
     const second = await migrate(fresh, DEFAULT_MIGRATIONS_DIR, silentLogger);
-    expect(first).toEqual({ applied: [1], databaseVersion: 1, codeVersion: 1 });
-    expect(second).toEqual({ applied: [], databaseVersion: 1, codeVersion: 1 });
+    expect(first).toEqual({ applied: [1, 2], databaseVersion: 2, codeVersion: 2 });
+    expect(second).toEqual({ applied: [], databaseVersion: 2, codeVersion: 2 });
     const tables = await fresh.query<{ t: string }>(
       "SELECT table_name AS t FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1",
     );
-    expect(tables.rows.map((r) => r.t)).toEqual(['map_feature', 'schema_migrations', 'spatial_ref_sys', 'tile_coverage']);
+    expect(tables.rows.map((r) => r.t)).toEqual(['map_feature', 'schema_migrations', 'spatial_ref_sys', 'terrain_tile', 'tile_coverage']);
   });
 
   it('serialises two concurrent runs with the advisory lock', async () => {
@@ -64,7 +85,7 @@ describe('migrator', () => {
       migrate(postgis.pool('migrate_race'), DEFAULT_MIGRATIONS_DIR, silentLogger),
       migrate(postgis.pool('migrate_race'), DEFAULT_MIGRATIONS_DIR, silentLogger),
     ]);
-    expect(results.flatMap((r) => r.applied)).toEqual([1]);
+    expect(results.flatMap((r) => r.applied)).toEqual([1, 2]);
   });
 
   it('rolls back a failing migration and leaves it unrecorded', async () => {
@@ -90,7 +111,7 @@ describe('migrator', () => {
     const warnings: string[] = [];
     const logger: Logger = { ...silentLogger, warn: (message) => warnings.push(message) };
     const result = await migrate(ahead, DEFAULT_MIGRATIONS_DIR, logger);
-    expect(result).toEqual({ applied: [], databaseVersion: 99, codeVersion: 1 });
+    expect(result).toEqual({ applied: [], databaseVersion: 99, codeVersion: 2 });
     expect(warnings).toEqual(['database schema is newer than this build; running in rollback mode']);
   });
 });

@@ -8,6 +8,7 @@ import {
   GeocodeQuerySchema,
   GeocodeResponseSchema,
   LocalitySchema,
+  TerrainGridSchema,
   ProblemSchema,
   type AreaPending,
   type AreaReady,
@@ -72,6 +73,14 @@ describe('area request body', () => {
 });
 
 describe('area response', () => {
+  it('accepts optional terrain and rejects malformed or non-finite grids', () => {
+    const terrain = { originM: -50, spacingM: 50, size: 2, datumM: 760, heights: [0, 1, -1, 0] };
+    expect(AreaResponseSchema.parse({ ...ready, scene: { ...ready.scene, terrain } }).status).toBe('ready');
+    for (const invalid of [{ ...terrain, heights: [0] }, { ...terrain, size: 1 }, { ...terrain, spacingM: 0 },
+      { ...terrain, heights: [0, 1, Infinity, 0] }, { ...terrain, datumM: Number.NaN }]) {
+      expect(TerrainGridSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
   it('parses pending and ready payloads by status', () => {
     expect(AreaResponseSchema.parse(pending).status).toBe('pending');
     expect(AreaResponseSchema.parse(ready).status).toBe('ready');

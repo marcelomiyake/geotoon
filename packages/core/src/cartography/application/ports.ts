@@ -8,6 +8,12 @@ import type {
 } from '../domain/features.js';
 import type { TileCoverage } from '../domain/tile-coverage.js';
 import type { Bounds, TileKey } from '../domain/tile-grid.js';
+import type { TerrainGrid } from '../domain/terrain.js';
+
+/** Optional bare-earth elevations. An unavailable source returns undefined, preserving flat maps. */
+export interface TerrainReader {
+  readWithin(centre: GeoPoint, radiusM: number): Promise<TerrainGrid | undefined>;
+}
 
 export interface FetchOptions {
   /** The adapter must give up and throw a `SourceError('timeout')` after this long. */

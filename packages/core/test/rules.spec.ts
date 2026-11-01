@@ -75,6 +75,23 @@ describe('height rule', () => {
 });
 
 describe('spawn point', () => {
+  it('avoids footways inside building footprints, but permits courtyards and raised parts', () => {
+    const building: StoredBuilding = { id: 'museum', kind: 'building', footprint: [[squareRing(POC, 0, 0, 10)]] };
+    const footway: MapLine = { id: 'covered', kind: 'footway', coords: [[at(POC, -5, 0), at(POC, 5, 0)]] };
+    const road: MapLine = { id: 'clear', kind: 'residential', coords: [[at(POC, -50, 20), at(POC, 50, 20)]] };
+    const blocked = local(chooseSpawn(POC, [footway, road], [building]).position);
+    expect(blocked.x).toBeCloseTo(0);
+    expect(blocked.y).toBeCloseTo(20);
+    const courtyard = { ...building, footprint: [[squareRing(POC, 0, 0, 20), squareRing(POC, 0, 0, 10)]] };
+    expect(local(chooseSpawn(POC, [footway], [courtyard]).position)).toEqual({ x: 0, y: 0 });
+    expect(local(chooseSpawn(POC, [footway], [{ ...building, minHeightM: 3 }]).position)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('considers clear street endpoints when the closest point is covered', () => {
+    const building: StoredBuilding = { id: 'museum', kind: 'building', footprint: [[squareRing(POC, 0, 0, 10)]] };
+    const road: MapLine = { id: 'road', kind: 'residential', coords: [[at(POC, -20, 0), at(POC, 20, 0)]] };
+    expect(Math.abs(local(chooseSpawn(POC, [road], [building]).position).x)).toBeCloseTo(20);
+  });
   const street = (id: string, kind: MapLine['kind'], y: number): MapLine => ({
     id,
     kind,

@@ -197,6 +197,17 @@ describe('IngestTiles', () => {
 });
 
 describe('ReadScene', () => {
+  it('includes optional terrain and its attribution, and preserves flat fallback', async () => {
+    const stored: StoredFeatures = { buildings: [], lines: [], areas: [], trees: [], datasets: [] };
+    const terrain = { originM: -50, spacingM: 50, size: 3, datumM: 760, heights: [0, 1, 2, 3, 0, 5, 6, 7, 8] };
+    const reader = { readWithin: () => Promise.resolve(stored) };
+    const withTerrain = await new ReadScene(reader, { readWithin: () => Promise.resolve(terrain) }).execute(POC, 500);
+    expect(withTerrain.terrain).toEqual(terrain);
+    expect(withTerrain.attribution.some((credit) => credit.text.includes('U.S. Geological Survey'))).toBe(true);
+    const fallback = await new ReadScene(reader, { readWithin: () => Promise.resolve(undefined) }).execute(POC, 500);
+    expect(fallback.terrain).toBeUndefined();
+    expect(fallback.attribution).toHaveLength(2);
+  });
   it('applies the height rule, line widths, tree sampling and attribution', async () => {
     const stored: StoredFeatures = {
       buildings: [

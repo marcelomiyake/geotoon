@@ -68,6 +68,7 @@ export {
   type HeightSource,
 } from './cartography/domain/height-rule.js';
 export type { Scene, SceneArea, SceneBuilding, SceneLine } from './cartography/domain/scene.js';
+export type { TerrainGrid } from './cartography/domain/terrain.js';
 export {
   SPAWN_MAX_STREET_DISTANCE_M,
   chooseSpawn,
@@ -111,6 +112,7 @@ export type {
   MapDataSource,
   StoredFeatures,
   TileCoverageRepository,
+  TerrainReader,
 } from './cartography/application/ports.js';
 export { ReadScene, TREE_ROW_SPACING_M } from './cartography/application/read-scene.js';
 export {
