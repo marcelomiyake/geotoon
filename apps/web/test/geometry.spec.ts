@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CollisionIndex, WALKER_RADIUS_M, clampToRadius, closestOnSegment } from '../src/scene/collision.js';
+import {
+  CollisionIndex,
+  MAX_SUBSTEP_M,
+  WALKER_RADIUS_M,
+  clampToRadius,
+  closestOnSegment,
+} from '../src/scene/collision.js';
 import { BASE_LINE_LIFT_M, WINDOW_SLOT_M, addPrismEdges, extrudePrism, normalisePolygon } from '../src/scene/extrude.js';
 import { GROUND_LAYERS, LAYER_HEIGHT_M, addArea, addGroundDisc, layerForArea } from '../src/scene/ground.js';
 import { MeshBuffer, NO_FACADE, isCorner, openRing, orient, signedArea, type Vec2 } from '../src/scene/mesh-buffer.js';
@@ -212,7 +218,7 @@ describe('collision', () => {
     return index;
   };
 
-  it('stops a walker against a wall (a running step is 0.2 m at most)', () => {
+  it('stops a walker against a wall when it moves in short steps', () => {
     const index = wall();
     let position = { x: -1, z: 0 };
     for (let step = 0; step < 10; step += 1) {
@@ -220,6 +226,29 @@ describe('collision', () => {
     }
     expect(position.x).toBeLessThanOrEqual(-WALKER_RADIUS_M);
     expect(position.x).toBeGreaterThan(-WALKER_RADIUS_M - 0.01);
+  });
+
+  it('does not let a fast move pass through a wall', () => {
+    const index = wall();
+    // One frame at car speed (15 m/s for 50 ms) is longer than the walker's diameter.
+    expect(index.resolve({ x: -0.5, z: 0 }, { x: 0.25, z: 0 }).x).toBeGreaterThan(0);
+    const stopped = index.move({ x: -0.5, z: 0 }, { x: 0.25, z: 0 });
+    expect(stopped.x).toBeLessThanOrEqual(-WALKER_RADIUS_M);
+    let position = { x: -20, z: 0 };
+    for (let frame = 0; frame < 60; frame += 1) {
+      position = index.move(position, { x: position.x + 0.75, z: position.z + 0.1 });
+    }
+    expect(position.x).toBeLessThanOrEqual(-WALKER_RADIUS_M);
+    expect(position.z).toBeCloseTo(6, 6);
+  });
+
+  it('moves the whole distance in open space, in steps no longer than the limit', () => {
+    const index = wall();
+    const far = index.move({ x: 100, z: 100 }, { x: 130, z: 140 });
+    expect(far.x).toBeCloseTo(130, 9);
+    expect(far.z).toBeCloseTo(140, 9);
+    expect(index.move({ x: 100, z: 100 }, { x: 100, z: 100 })).toEqual({ x: 100, z: 100 });
+    expect(MAX_SUBSTEP_M).toBeLessThan(2 * WALKER_RADIUS_M);
   });
 
   it('slides along a wall instead of stopping', () => {

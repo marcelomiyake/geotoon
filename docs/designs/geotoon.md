@@ -150,9 +150,9 @@ Each goal is a pass/fail check. G1 to G5 are the owner's done criteria.
 
 *   **Given**: a loaded scene.
 *   **When**: the user clicks "Click to walk" and uses W A S D or the arrow
-    keys, the mouse, and Shift to run.
+    keys, the mouse, and Shift to go faster.
 *   **Then**:
-    *   The camera moves at walking speed, faster with Shift.
+    *   The camera moves at bicycle speed, at car speed with Shift.
     *   Building walls stop the camera.
     *   At the edge of the area the camera stops and a message explains why.
     *   Esc opens a pause screen with Resume, New address, Controls and
@@ -481,8 +481,9 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
 *   **Controls.**
     *   `PointerLockControls`, started from a "Click to walk" overlay.
     *   Movement keys read by `KeyboardEvent.code` (W A S D or the arrow
-        keys), Shift to run, Q and E to turn.
-    *   Walking speed 1.4 m/s, running speed 4 m/s.
+        keys), Shift for car speed, Q and E to turn.
+    *   Speed 6 m/s (about 22 km/h), 15 m/s with Shift (about 54 km/h). The
+        owner found the first speeds (1.4 and 4 m/s) too slow for a 2 km area.
     *   Esc opens the pause screen.
     *   Keys are ignored while a text field has focus.
 *   **Collision.** A 0.3 m circle against footprint edges, sliding along
@@ -1540,9 +1541,10 @@ relative to the repository root.
     *   **`controls.ts`:**
         *   `PointerLockControls`, with movement keys read by
             `KeyboardEvent.code` (WASD and the arrow keys).
-        *   Shift to run (1.4 and 4 m/s), Q and E to turn at 90°/s.
+        *   6 m/s, Shift for 15 m/s, Q and E to turn at 90°/s.
         *   Movement is ignored while an input has focus.
-        *   Each frame, the move goes through `collision.resolve` and the
+        *   Each frame, the move goes through `collision.move` (steps of at
+            most 0.25 m, so a fast move cannot pass through a wall) and the
             radius clamp (2 m inside the radius), and the eye height is
             fixed at 1.7 m.
 

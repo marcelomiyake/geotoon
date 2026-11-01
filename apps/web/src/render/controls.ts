@@ -3,8 +3,10 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { type CollisionIndex, clampToRadius } from '../scene/collision.js';
 import { EYE_HEIGHT_M } from './renderer.js';
 
-export const WALK_SPEED_M_S = 1.4;
-export const RUN_SPEED_M_S = 4;
+/** About 22 km/h: faster than a person, like a bicycle, so a 2 km area is quick to cross. */
+export const WALK_SPEED_M_S = 6;
+/** About 54 km/h with Shift: car speed on a city street. */
+export const FAST_SPEED_M_S = 15;
 export const TURN_SPEED_RAD_S = Math.PI / 2;
 /** The walker stops this far inside the loaded radius. */
 export const EDGE_MARGIN_M = 2;
@@ -14,7 +16,7 @@ const FORWARD = new Set(['KeyW', 'ArrowUp']);
 const BACK = new Set(['KeyS', 'ArrowDown']);
 const LEFT = new Set(['KeyA', 'ArrowLeft']);
 const RIGHT = new Set(['KeyD', 'ArrowRight']);
-const RUN = new Set(['ShiftLeft', 'ShiftRight']);
+const FAST = new Set(['ShiftLeft', 'ShiftRight']);
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 export interface WalkArea {
@@ -89,7 +91,7 @@ export class WalkControls {
     this.forward.y = 0;
     this.forward.normalize();
     this.right.crossVectors(this.forward, WORLD_UP).normalize();
-    const speed = [...RUN].some((code) => this.keys.has(code)) ? RUN_SPEED_M_S : WALK_SPEED_M_S;
+    const speed = [...FAST].some((code) => this.keys.has(code)) ? FAST_SPEED_M_S : WALK_SPEED_M_S;
     const length = Math.hypot(ahead, side);
     const step = (speed * dt) / length;
     const from = { x: this.camera.position.x, z: this.camera.position.z };
@@ -97,7 +99,7 @@ export class WalkControls {
       x: from.x + (this.forward.x * ahead + this.right.x * side) * step,
       z: from.z + (this.forward.z * ahead + this.right.z * side) * step,
     };
-    const moved = area.collision.resolve(from, to);
+    const moved = area.collision.move(from, to);
     const { point, clamped } = clampToRadius(moved, area.radiusM, EDGE_MARGIN_M);
     if (clamped) {
       this.onEdge();
