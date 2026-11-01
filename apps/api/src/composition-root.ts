@@ -10,7 +10,7 @@ import {
   TILE_ZOOM,
   type MapDataSource,
 } from '@geotoon/core';
-import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import type { Logger as Pino } from 'pino';
 import { InProcessScheduler } from './adapters/ingestion/in-process-scheduler.js';
@@ -84,7 +84,7 @@ export async function compose(
   );
 
   const server = await buildServer({
-    logger: pino as FastifyBaseLogger,
+    logger: pino,
     staticDir: config.staticDir,
     requestArea,
     suggest,

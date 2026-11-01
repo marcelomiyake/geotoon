@@ -5,7 +5,7 @@ export interface DuckDbConfig {
   readonly threads: number;
   readonly tempDirectory: string;
   /** Where `httpfs` is installed; the image bakes it in so startup needs no download. */
-  readonly extensionDirectory?: string | undefined;
+  readonly extensionDirectory?: string;
 }
 
 export type DuckRow = Record<string, JS>;
