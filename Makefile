@@ -50,7 +50,7 @@ kind-load: ## Load the app image into Kind (the node pulls PostGIS by digest)
 
 deploy: ## helm upgrade --install with the current image tag
 	helm upgrade --install geotoon deploy/helm/geotoon --namespace $(NAMESPACE) --create-namespace \
-	  --set image.tag=$(GIT_SHA) --wait --timeout 5m
+	  --set-string image.tag=$(GIT_SHA) --wait --timeout 5m
 
 open: ## Port-forward the app to http://localhost:8080
 	kubectl --namespace $(NAMESPACE) port-forward svc/geotoon 8080:80
