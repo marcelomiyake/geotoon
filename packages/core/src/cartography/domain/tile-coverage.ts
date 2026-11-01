@@ -7,14 +7,14 @@ export interface TileCoverage {
   readonly tile: TileKey;
   readonly state: TileState;
   readonly attempts: number;
-  readonly leaseOwner?: string | undefined;
-  readonly leaseExpiresAt?: Date | undefined;
-  readonly errorClass?: string | undefined;
-  readonly retryAfter?: Date | undefined;
-  readonly release?: string | undefined;
-  readonly featureCount?: number | undefined;
-  readonly fetchedAt?: Date | undefined;
-  readonly fetchRequestId?: string | undefined;
+  readonly leaseOwner?: string;
+  readonly leaseExpiresAt?: Date;
+  readonly errorClass?: string;
+  readonly retryAfter?: Date;
+  readonly release?: string;
+  readonly featureCount?: number;
+  readonly fetchedAt?: Date;
+  readonly fetchRequestId?: string;
 }
 
 /** How long a claim is valid. Longer than the source query timeout (120 s). */

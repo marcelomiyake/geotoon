@@ -17,7 +17,7 @@ export interface SceneLine {
   readonly id: string;
   readonly kind: LineKind;
   readonly widthM: number;
-  readonly name?: string | undefined;
+  readonly name?: string;
   readonly coords: MultiLineCoords;
 }
 

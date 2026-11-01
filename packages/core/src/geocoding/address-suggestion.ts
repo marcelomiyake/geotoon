@@ -12,7 +12,7 @@ export interface AddressSuggestion {
 
 export interface GeocoderSearch {
   readonly query: string;
-  readonly bias?: GeoPoint | undefined;
+  readonly bias?: GeoPoint;
   readonly limit: number;
 }
 

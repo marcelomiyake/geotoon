@@ -17,8 +17,8 @@ import type { ReadScene } from './read-scene.js';
 export interface TileStatusView {
   readonly tile: TileKey;
   readonly state: TileState;
-  readonly fetchedAt?: Date | undefined;
-  readonly release?: string | undefined;
+  readonly fetchedAt?: Date;
+  readonly release?: string;
 }
 
 export type AreaResult =

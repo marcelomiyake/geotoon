@@ -80,16 +80,16 @@ export function isAreaKind(value: string): value is AreaKind {
 export interface StoredBuilding {
   readonly id: string;
   readonly footprint: MultiPolygonCoords;
-  readonly sourceHeightM?: number | undefined;
-  readonly numFloors?: number | undefined;
-  readonly minHeightM?: number | undefined;
+  readonly sourceHeightM?: number;
+  readonly numFloors?: number;
+  readonly minHeightM?: number;
   readonly kind: string;
 }
 
 export interface MapLine {
   readonly id: string;
   readonly kind: LineKind;
-  readonly name?: string | undefined;
+  readonly name?: string;
   readonly coords: MultiLineCoords;
 }
 
@@ -117,12 +117,12 @@ export interface IngestFeature {
   readonly layer: FeatureLayer;
   readonly kind: string;
   readonly geometryWkb: Uint8Array;
-  readonly heightM?: number | null | undefined;
-  readonly numFloors?: number | null | undefined;
-  readonly minHeightM?: number | null | undefined;
-  readonly name?: string | null | undefined;
+  readonly heightM?: number | null;
+  readonly numFloors?: number | null;
+  readonly minHeightM?: number | null;
+  readonly name?: string | null;
   readonly sourceDataset: string;
-  readonly sourceRecordId?: string | null | undefined;
+  readonly sourceRecordId?: string | null;
   readonly attrs: Readonly<Record<string, string>>;
 }
 
