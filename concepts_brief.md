@@ -1495,62 +1495,94 @@ These are not rejected; they are listed so `/egm-draft` carries them forward.
     scene-builder module. (M16)
 14. **Repository.** Replace `.gitignore` before the first commit. (M21)
 
-### Open decisions for the owner (needed before `/egm-draft`)
+### Stage 0 results (measured 2026-11-01, from the workstation)
 
-- **D1. Source of streets, land use, parks, water and trees.** This is the
-  most consequential decision, and it depends on the B1 measurements. The
-  options:
-  - hardened Overpass (B1b);
-  - Overture's `transportation` and `base` themes (B1a). This departs from
-    the checklist wording, though the data is still OSM under ODbL;
-  - a one-time OSM extract (B1c).
-- **D2. Loading model.**
-  - Five lenses favour a request followed by polling, backed by the tile
-    state table.
-  - `egm-zoom-out` favours one synchronous request with a written timeout
-    chain.
-- **D3. Coverage mechanism.** Either the current zoom-16 tile grid, or a
-  `loaded_area` table of fetched circles tested with `ST_Covers`.
-  - `egm-zoom-out`'s case for the table: Overture's cost is flat per query,
-    so the grid saves nothing there. It helps Overpass only if queries are
-    per tile.
-  - `egm-comprehension` adds that, with the grid, an address 300 m away can
-    still cost a full first-load wait.
-- **D4. Where the Overture release pin lives.** Either a code constant tied
-  to a tested query, or a Helm value, optionally resolved at startup.
-- **D5. Meaning of "zero SonarCloud issues".** Issues only; issues plus all
-  hotspots reviewed; or issues plus a passing quality gate.
-- **D6. Migration mechanism.** Either a migration tool run by an init
-  container under an advisory lock, or an init-script ConfigMap / idempotent
-  SQL at startup.
-- **D7. Partial scenes.** Whether a buildings-only scene may be shown when
-  Overpass fails. If so, it is labelled incomplete and never stored as
-  complete.
-- **D8. Area edge.** Clip the scene to the 1 km circle (with fog and an edge
-  wall), or show whole tiles.
-- **D9. Payload shape.** One scene payload per area, or per-tile endpoints.
-- **D10. Test command name.** `make test`, which needs Make on the machine,
-  or `npm test` with `make test` as a wrapper.
-- **D11. Bounded contexts.** One context, or three: Geocoding, Area
-  Acquisition and Scene.
-- **D12. Device and language scope.** Desktop only; the UI language; Photon's
-  `lang` parameter.
-- **D13. Collision.** Whether it stays (decision 6), given that no done
-  criterion requires it.
+- **Overpass** (streets, trees, land use, leisure, natural, waterway; no
+  buildings; relations included; `out geom`):
+  - one zoom-16 tile (0.3 km²): 38 s, 84 KB;
+  - the 1 km circle: 32 s, 541 KB;
+  - the 16-tile box (5.0 km²), sent right after: refused with 502 "at
+    capacity" in 0.8 s. `/api/status` answered 406.
+  - Query time does not follow query size. It is queueing on a shared
+    server, and back-to-back queries are refused.
+- **Overture** (release `2026-10-21.0`, the 16-tile box):
+  - Buildings: 9,106. `class` is empty for 8,638 (95%). Sources: Google
+    Open Buildings 6,799, Microsoft ML Buildings 1,538, OSM 769. 38 s cold.
+  - `transportation/segment`: 1,280 (OSM road classes plus 6 rail), 17 s.
+  - `base`: `land_use` 3 s (parks 31, pitches 20, residential 20, ...),
+    `water` 6 s (20), `land` 7 s (75 trees, 8 tree rows),
+    `infrastructure` 12 s.
+  - Every `transportation` and `base` feature here has
+    `sources[].dataset = OpenStreetMap`.
+- **Conclusion:** Overture's OSM-derived themes carry the same streets,
+  parks, water and trees as Overpass (more trees: 75 against 32), read from
+  S3 with no fair-use server in the path.
+
+### Decisions resolved after Stage 0
+
+The owner delegated these choices ("choose the solution that fits this
+project better"; "make the smallest reasonable assumption"). Each one is
+reported in the final summary.
+
+- **D1. OSM layers come from Overture's `transportation` and `base` themes
+  (option a).** Overpass is not used. Reason: the Stage 0 numbers above.
+  Provenance keeps `sources[].dataset` and the OSM record id, and the
+  attribution names OpenStreetMap.
+- **D2. Request, then poll.** `POST /api/v1/areas {lat, lon}` is idempotent.
+  It claims missing tiles, starts ingestion outside the request's lifetime,
+  and returns 202 with tile states, or 200 with the scene once every tile is
+  complete. The client repeats the POST every 2 s. The tile state rows are
+  the job state; there is no queue.
+- **D3. Zoom-16 grid kept as the coverage key**, one state row per tile
+  (there is now one source system). Features are stored once by GERS id.
+  The grid gives single-flight leases and per-tile evidence for criterion 2.
+  `egm-zoom-out`'s point stands: the grid does not save Overture fetch time.
+- **D4. Overture release is a Helm value** (`overture.release`, default
+  `2026-10-21.0`), not resolved automatically. A missing release fails with
+  `OVERTURE_RELEASE_NOT_FOUND`.
+- **D5. Criterion 5 means:** zero open issues, zero security hotspots left to
+  review, and a passed quality gate on `main`. Analysis runs through
+  `sonar-scanner` with Automatic Analysis off.
+- **D6. Migrations:** plain versioned SQL files, applied at API startup by a
+  small migrator under `pg_advisory_lock`. Readiness waits for it. One API
+  replica.
+- **D7. No partial scenes.** An area is ready only when every tile is
+  complete. Failed tiles return a retryable error with a code.
+- **D8. Area edge:** the server returns whole features within the radius
+  (`ST_DWithin`); the client adds distance fog and an invisible wall at the
+  radius.
+- **D9. One scene payload per area**, gzip-compressed.
+- **D10. Test command: `make test`** (GNU Make 4.3 is installed). It runs
+  `npm test` across npm workspaces. Node 26 has no Corepack, so npm is the
+  package manager.
+- **D11. Two bounded contexts in `core`:** `geocoding` (thin) and
+  `cartography` (tiles, features, height rule, scene).
+- **D12. Desktop browsers with WebGL2.** English UI. Photon `lang=default`
+  (local street names).
+- **D13. Collision stays** as a 2D circle-against-footprint check. The spawn
+  point is moved outside footprints (M14).
+- **Radius.** With Overpass gone, the 1 km limit no longer applies (N12). The
+  default is 2 km if build measurements hold: first load at most 60 s, gzip
+  scene payload at most 3 MB, scene build at most 1.5 s, smooth frame rate.
+  Otherwise it steps down to 1.5 km, then 1 km. The maximum is validated in
+  the Helm values schema.
+- **Heights.** 95% of buildings have no `class`, so the per-class table is
+  replaced by a footprint-area rule (small footprints 1 to 3 floors, large
+  low-rise footprints warehouse height), varied by a hash of the GERS id.
 
 ### Departures from the owner's checklist to report
 
 - **Cesium OSM Buildings** is not used (decision 1).
-- **OSM layers through Overture.** If D1 chooses Overture themes, OSM data
-  arrives through Overture rather than from OSM directly.
-- **Test command.** The command is an assumption until D10 is settled.
+- **OSM data arrives through Overture's distribution**, not from an OSM
+  server (D1).
+- **Test command** `make test` was chosen; the owner left it unspecified.
 
 ### Staging
 
-1. **Stage 0: Measure.** Take the measurements listed under "Measurements
+1. **Stage 0: Measure (done 2026-11-01).** Take the measurements listed under "Measurements
    required before the PRD", and add the results to
    `/home/marcelomiyake/projects/geotoon/docs/egm/brainstorm_context.md`.
-2. **Stage 1: Owner decisions.** The owner answers D1 to D13. D1, D2 and D3
+2. **Stage 1: Decisions (resolved above).** The owner answers D1 to D13. D1, D2 and D3
    come first, because the schema and the contract depend on them.
 3. **Stage 2: Design document.** Run `/egm-draft` to produce:
    - the contract;

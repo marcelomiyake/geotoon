@@ -78,3 +78,7 @@ Local tools: Docker (12 CPU, 31 GB), kind 0.33, Helm 4.3, kubectl, Node 26, Pyth
 - Kind cluster needs outbound internet (S3, Overpass, Photon); DuckDB extensions must be preinstalled in the image.
 - Attribution required on screen: OpenStreetMap contributors (ODbL), Overture Maps Foundation, Photon/komoot.
 - SonarCloud "zero issues" also covers Dockerfile and Kubernetes/Helm rules (non-root users, resource limits, etc.).
+
+## Stage 0 measurements (after Goldfish review)
+
+See `concepts_brief.md`, section "Stage 0 results". Summary: Overpass query time is queueing (38 s for one 0.3 km² tile, 32 s for the 1 km circle, third query refused); Overture `transportation` and `base` themes for the 5.0 km² 16-tile box took 3-17 s each and are 100% OpenStreetMap-sourced; 95% of buildings have no `class`.
