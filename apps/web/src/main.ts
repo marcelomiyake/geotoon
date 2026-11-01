@@ -5,7 +5,7 @@ import { SceneRenderer } from './render/renderer.js';
 import { buildScene, type BuiltScene } from './scene/scene-builder.js';
 import { Overlays, areaErrorMessage } from './ui/overlays.js';
 import { SearchBox, type PickedPlace } from './ui/search-box.js';
-import { readUrlState } from './ui/search-logic.js';
+import { areaSearchParams, readUrlState } from './ui/search-logic.js';
 
 interface DebugState {
   requestId: string;
@@ -107,10 +107,7 @@ async function openArea(place: PickedPlace): Promise<void> {
   loadController = controller;
   lastPlace = place;
   overlays.setPlace(place.label);
-  const params = new URLSearchParams({ lat: place.lat.toFixed(6), lon: place.lon.toFixed(6) });
-  if (urlState.debug) {
-    params.set('debug', '1');
-  }
+  const params = areaSearchParams(place, urlState.debug);
   window.history.replaceState(null, '', `?${params.toString()}`);
   overlays.showLoading(undefined, place.label);
   try {
@@ -132,7 +129,7 @@ async function openArea(place: PickedPlace): Promise<void> {
     debug.tiles = `${ready.tiles.filter((t) => t.state === 'complete').length}/${ready.tiles.length}`;
     overlays.showBuilding();
     await nextFrame();
-    const built = buildScene(ready.scene, ready.area);
+    const built = buildScene(ready.scene, { ...ready.area, ...(place.locality ? { locality: place.locality } : {}) });
     debug.built = built;
     if (built.stats.buildings === 0 && built.stats.lines === 0) {
       overlays.showError('No map data found around this point.', 'Try an address in a built-up area.');

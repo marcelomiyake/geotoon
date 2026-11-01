@@ -457,6 +457,37 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
 *   **Projection.** Local metres around the area centre (equirectangular,
     computed in float64, then stored as float32). The error is under 1 m at
     2 km. Web Mercator metres are not used.
+*   **Local architecture and street names.** Geocoding suggestions optionally carry
+    `{locality: {countryCode, city?}}`. The Photon adapter maps structured fields to
+    these domain values; the HTTP contract validates a two-letter uppercase country
+    code. The browser passes locality to the pure scene builder and retains it in
+    shared links as `country` and `city`. This does not change area requests, tile
+    keys, storage or `sourceCalls`. No country is guessed from a coordinate bounding
+    box, address label or the browser language. Coordinate-only entries use the
+    original style; no reverse-geocoding request is added.
+
+    `scene/architecture.ts` resolves a city override, then a country profile, then
+    the original palette/roof/window defaults. The initial profiles cover Brazil
+    and São Paulo. Brazil mixes clay roofs and concrete slabs with plaster colours,
+    wider windows and slimmer frames. São Paulo uses a quieter concrete palette,
+    a larger slab-roof share and closer window slots. Building IDs keep colour and
+    roof choices deterministic; building kinds, height limits and footprint shape
+    still prevent unsuitable pitched roofs. These are artistic presentation defaults,
+    not measured facade or roof facts. Other countries retain the original style.
+
+    `scene/street-signs.ts` places panels parallel to named surface streets, on the
+    sidewalk, set back from segment ends and repeated on long segments. It omits
+    highways, paths, water, rail, short/unnamed lines, positions outside the area and
+    positions reached only by crossing a building wall. Nearby duplicates are removed;
+    at most 128 panels nearest the address are rendered. Names come from `scene.lines`,
+    including accents. Brazil uses an illustrative blue/white country fallback;
+    São Paulo overrides it with a pale footer inspired by the
+    [owner's sign reference](https://www.estadao.com.br/resizer/v2/RVUG6E2FFFE75IFKZ2HXRT7YEU.jpg?quality=80&auth=397aa491cda14e760d0663f169cbe2f3bac2713aa40359578d34dd57f2d682c5&height=1600).
+    Other places use neutral panels. No address ranges or postal codes are invented.
+    `render/street-signs.ts` draws lettering into one bounded canvas atlas shared by
+    both readable faces of every panel, with instanced posts. Scene replacement
+    disposes the atlas along with geometries and materials. The reference photograph
+    is not bundled as a texture or fixture.
 *   **Scene builder** (pure TypeScript, tested in Node). It turns the
     contract into typed arrays:
     *   buildings: walls plus roofs triangulated with earcut, merged into
@@ -477,7 +508,8 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
     *   `OutlineEffect` from `three/addons` for ink outlines.
     *   A directional "sun" plus hemisphere light; no shadow maps.
     *   Sky colour background, and fog from 150 m to 600 m.
-    *   No custom GLSL.
+    *   Building facade GLSL paints windows/frames and roof trim using profile
+        dimensions and per-wall window slots; it keeps the cel lighting and contours.
 *   **Controls.**
     *   `PointerLockControls`, started from a "Click to walk" overlay.
     *   Movement keys read by `KeyboardEvent.code` (W A S D or the arrow

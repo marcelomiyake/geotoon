@@ -24,10 +24,11 @@ uniform vec3 inkColour;
 varying vec3 vFacade;
 varying float vWorldY;
 
-const float STOREY_M = 3.0;
-const float SILL_M = 0.95;
-const float HEAD_M = 2.3;
-const float FRAME_M = 0.09;
+uniform float storeyM;
+uniform float sillM;
+uniform float headM;
+uniform float frameM;
+uniform float halfWindowM;
 const float MULLION_M = 0.035;
 const float TRIM_M = 0.28;
 const float TOP_MARGIN_M = 0.45;
@@ -44,20 +45,20 @@ if (vFacade.y >= 0.0) {
     float pxX = max(fwidth(vFacade.x) * slotWidth, 1e-4);
     float px = max(pxX, pxY);
     float x = (fract(vFacade.x) - 0.5) * slotWidth;
-    float halfWidth = min(0.8, slotWidth * 0.28);
-    float storey = floor(vWorldY / STOREY_M);
-    float y = vWorldY - storey * STOREY_M;
+    float halfWidth = min(halfWindowM, slotWidth * 0.36);
+    float storey = floor(vWorldY / storeyM);
+    float y = vWorldY - storey * storeyM;
     float wallTop = vWorldY + vFacade.y;
-    float fits = step(storey * STOREY_M + HEAD_M, wallTop - TOP_MARGIN_M);
-    float edge = min(halfWidth - abs(x), min(y - SILL_M, HEAD_M - y));
+    float fits = step(storey * storeyM + headM, wallTop - TOP_MARGIN_M);
+    float edge = min(halfWidth - abs(x), min(y - sillM, headM - y));
     float inside = smoothstep(-px, px, edge) * fits;
     float frame = max(
-      1.0 - smoothstep(FRAME_M - px, FRAME_M + px, edge),
+      1.0 - smoothstep(frameM - px, frameM + px, edge),
       1.0 - smoothstep(MULLION_M - pxX, MULLION_M + pxX, abs(x))
     );
     float shine = fract((x + y) * 0.55);
     float streak = smoothstep(0.5, 0.53, shine) - smoothstep(0.66, 0.69, shine);
-    float rise = clamp((y - SILL_M) / (HEAD_M - SILL_M), 0.0, 1.0);
+    float rise = clamp((y - sillM) / (headM - sillM), 0.0, 1.0);
     vec3 glass = mix(glassColour, glassHighlight, clamp(rise * 0.45 + streak * 0.7, 0.0, 1.0));
     vec3 window = mix(glass, frameColour, frame);
     vec3 near = mix(painted, window, inside);

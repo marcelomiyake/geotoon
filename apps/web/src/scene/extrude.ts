@@ -14,6 +14,7 @@ export interface Prism {
   readonly roofColour: Rgb;
   /** When set, small rectangular low buildings get a pitched roof in this colour. */
   readonly tileColour?: Rgb;
+  readonly windowSlotM?: number;
 }
 
 /** Cleans a polygon: outer ring counter-clockwise from above, holes clockwise. */
@@ -55,7 +56,7 @@ export function extrudePrism(prism: Prism, out: MeshBuffer, edges?: number[]): n
       continue;
     }
     for (const ring of rings) {
-      addWalls(ring, prism.baseY, prism.topY, prism.wallColour, out);
+      addWalls(ring, prism, out);
       if (edges !== undefined) {
         addPrismEdges(ring, prism.baseY, prism.topY, edges);
       }
@@ -77,7 +78,8 @@ function pitchedRoofCorners(prism: Prism, rings: readonly Vec2[][]): ReturnType<
   return gableCorners(rings[0]!);
 }
 
-function addWalls(ring: readonly Vec2[], y0: number, y1: number, colour: Rgb, out: MeshBuffer): void {
+function addWalls(ring: readonly Vec2[], prism: Prism, out: MeshBuffer): void {
+  const { baseY: y0, topY: y1, wallColour: colour } = prism;
   const height = y1 - y0;
   for (let i = 0; i < ring.length; i += 1) {
     const p = ring[i]!;
@@ -94,7 +96,7 @@ function addWalls(ring: readonly Vec2[], y0: number, y1: number, colour: Rgb, ou
     const q1 = [q[0], y1, q[1]] as const;
     const p1 = [p[0], y1, p[1]] as const;
     // Window slots: u runs 0..n along the wall so each window sits centred in its slot.
-    const slots = Math.floor(length / WINDOW_SLOT_M);
+    const slots = Math.floor(length / (prism.windowSlotM ?? WINDOW_SLOT_M));
     const slotWidth = slots > 0 ? length / slots : 0;
     const fp0: Vec3 = [0, height, slotWidth];
     const fq0: Vec3 = [slots, height, slotWidth];

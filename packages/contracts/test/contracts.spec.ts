@@ -7,6 +7,7 @@ import {
   ERROR_CODES,
   GeocodeQuerySchema,
   GeocodeResponseSchema,
+  LocalitySchema,
   ProblemSchema,
   type AreaPending,
   type AreaReady,
@@ -91,6 +92,15 @@ describe('area response', () => {
 });
 
 describe('geocode', () => {
+  it('validates optional structured locality without breaking older suggestions', () => {
+    expect(LocalitySchema.parse({ countryCode: 'BR', city: ' São Paulo ' })).toEqual({ countryCode: 'BR', city: 'São Paulo' });
+    expect(LocalitySchema.parse({ countryCode: 'BR' })).toEqual({ countryCode: 'BR' });
+    for (const locality of [{ countryCode: 'Brazil' }, { countryCode: 'br' }, { countryCode: 'BR', city: '' }]) {
+      expect(LocalitySchema.safeParse(locality).success).toBe(false);
+    }
+    const suggestion = { id: '1', label: 'São Paulo', lat: 0, lon: 0, kind: 'place', locality: { countryCode: 'BR', city: 'São Paulo' } };
+    expect(GeocodeResponseSchema.parse({ suggestions: [suggestion] }).suggestions[0]?.locality).toEqual(suggestion.locality);
+  });
   it('coerces the optional bias from query strings', () => {
     expect(GeocodeQuerySchema.parse({ q: 'Av. Bolonha', lat: '-23.5', lon: '-46.7' })).toEqual({
       q: 'Av. Bolonha',

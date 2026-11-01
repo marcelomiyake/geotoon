@@ -1,4 +1,4 @@
-import type { Suggestion } from '@geotoon/contracts';
+import type { Locality, Suggestion } from '@geotoon/contracts';
 import {
   DEBOUNCE_MS,
   debounce,
@@ -12,6 +12,7 @@ export interface PickedPlace {
   readonly lat: number;
   readonly lon: number;
   readonly label: string;
+  readonly locality?: Locality;
 }
 
 export interface SearchBoxOptions {
@@ -120,7 +121,7 @@ export class SearchBox {
   private pick(suggestion: Suggestion): void {
     this.options.input.value = suggestion.label;
     this.render([]);
-    this.options.onPick({ lat: suggestion.lat, lon: suggestion.lon, label: suggestion.label });
+    this.options.onPick(suggestion);
   }
 
   private setActive(index: number): void {

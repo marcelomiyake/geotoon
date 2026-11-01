@@ -1,9 +1,10 @@
-import type { Scene } from '@geotoon/contracts';
+import type { Locality, Scene } from '@geotoon/contracts';
+import { type ArchitectureStyle, architectureFor, buildingAppearance } from './architecture.js';
 import { CollisionIndex } from './collision.js';
 import { type LocalPolygon, extrudePrism, normalisePolygon } from './extrude.js';
 import { GROUND_LAYERS, type GroundLayer, LAYER_HEIGHT_M, addArea, addGroundDisc, layerForArea } from './ground.js';
 import { MeshBuffer, type MeshData, type Vec2 } from './mesh-buffer.js';
-import { MARKING_COLOUR, SIDEWALK_COLOUR, buildingColours, lineColour } from './palette.js';
+import { MARKING_COLOUR, SIDEWALK_COLOUR, lineColour } from './palette.js';
 import { type Projection, createProjection } from './projection.js';
 import { addRibbon } from './ribbons.js';
 import {
@@ -20,25 +21,17 @@ import {
   polesAlong,
 } from './street.js';
 import { type TreeInstances, buildTrees } from './trees.js';
+import { type StreetSign, buildStreetSigns } from './street-signs.js';
 
 /** The ground disc reaches this far past the area radius. */
 export const GROUND_MARGIN_M = 50;
 const GROUND_SEGMENTS = 96;
 /** Buildings are grouped into square chunks so the renderer can cull distant ones. */
 export const CHUNK_SIZE_M = 250;
-/** Buildings of these kinds keep flat roofs whatever their shape. */
-const FLAT_ROOF_KINDS: ReadonlySet<string> = new Set([
-  'apartments',
-  'commercial',
-  'industrial',
-  'retail',
-  'office',
-  'warehouse',
-  'school',
-  'hospital',
-]);
 
 export interface BuiltScene {
+  readonly architecture: ArchitectureStyle;
+  readonly streetSigns: readonly StreetSign[];
   readonly projection: Projection;
   readonly radiusM: number;
   /** One mesh per non-empty chunk. */
@@ -62,6 +55,7 @@ export interface SceneStats {
   readonly areas: number;
   readonly trees: number;
   readonly poles: number;
+  readonly streetSigns: number;
   readonly wireSegments: number;
   readonly triangles: number;
   readonly outlineSegments: number;
@@ -73,6 +67,7 @@ export interface SceneArea {
   readonly lat: number;
   readonly lon: number;
   readonly radiusM: number;
+  readonly locality?: Locality;
 }
 
 /** Turns the wire scene into typed arrays per material, a collision index and stats. */
@@ -83,7 +78,9 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     polygon.map((ring) => ring.map(([lon, lat]) => projection.toLocal(lon!, lat!)));
 
   const collision = new CollisionIndex();
-  const chunks = addBuildings(scene.buildings, project, collision);
+  const architecture = architectureFor(area.locality);
+  const chunks = addBuildings(scene.buildings, project, collision, architecture);
+  const streetSigns = buildStreetSigns(scene.lines, projection, area.radiusM, collision);
 
   const ground = Object.fromEntries(GROUND_LAYERS.map((layer) => [layer, new MeshBuffer()])) as Record<
     GroundLayer,
@@ -118,6 +115,8 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     0,
   );
   return {
+    architecture,
+    streetSigns,
     projection,
     radiusM: area.radiusM,
     buildings,
@@ -134,6 +133,7 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
       areas: scene.areas.length,
       trees: trees.count,
       poles: poles.length / 3,
+      streetSigns: streetSigns.length,
       wireSegments: wires.length / 6,
       triangles,
       outlineSegments,
@@ -150,6 +150,7 @@ function addBuildings(
   buildings: Scene['buildings'],
   project: (polygon: readonly (readonly (readonly number[])[])[]) => LocalPolygon,
   collision: CollisionIndex,
+  architecture: ArchitectureStyle,
 ): Map<string, BuildingChunk> {
   const chunks = new Map<string, BuildingChunk>();
   for (const building of buildings) {
@@ -164,8 +165,7 @@ function addBuildings(
       chunk = { mesh: new MeshBuffer({ facade: true }), edges: [] };
       chunks.set(key, chunk);
     }
-    const colours = buildingColours(building.id);
-    const pitched = building.minHeightM < 0.5 && !FLAT_ROOF_KINDS.has(building.kind);
+    const { colours, pitched } = buildingAppearance(building, architecture);
     extrudePrism(
       {
         polygons,
@@ -173,6 +173,7 @@ function addBuildings(
         topY: building.heightM,
         wallColour: colours.wall,
         roofColour: colours.roof,
+        windowSlotM: architecture.facade.slotM,
         ...(pitched ? { tileColour: colours.tile } : {}),
       },
       chunk.mesh,

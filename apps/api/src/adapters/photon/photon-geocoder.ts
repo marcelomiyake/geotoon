@@ -25,6 +25,7 @@ interface PhotonProperties {
   readonly city?: string;
   readonly state?: string;
   readonly country?: string;
+  readonly countrycode?: string;
 }
 
 interface PhotonFeature {
@@ -149,5 +150,10 @@ function toSuggestion(feature: PhotonFeature, index: number): AddressSuggestion[
     properties.osm_type && properties.osm_id !== undefined
       ? `${properties.osm_type}${properties.osm_id}`
       : `photon-${index}`;
-  return [{ id, label, point, kind: suggestionKind(properties.type) }];
+  const countryCode = properties.countrycode?.trim().toUpperCase();
+  const city = (properties.city ?? (properties.type === 'city' ? properties.name : undefined))?.trim();
+  const locality = countryCode !== undefined && /^[A-Z]{2}$/.test(countryCode)
+    ? { countryCode, ...(city ? { city: city.slice(0, 120) } : {}) }
+    : undefined;
+  return [{ id, label, point, kind: suggestionKind(properties.type), ...(locality ? { locality } : {}) }];
 }

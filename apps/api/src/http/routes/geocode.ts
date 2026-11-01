@@ -35,6 +35,7 @@ export function registerGeocodeRoutes(app: FastifyInstance, options: GeocodeRout
           lat: s.point.lat,
           lon: s.point.lon,
           kind: s.kind,
+          ...(s.locality === undefined ? {} : { locality: s.locality }),
         })),
       };
     },

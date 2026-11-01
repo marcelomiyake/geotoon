@@ -8,6 +8,7 @@ export interface AddressSuggestion {
   readonly label: string;
   readonly point: GeoPoint;
   readonly kind: SuggestionKind;
+  readonly locality?: { readonly countryCode: string; readonly city?: string };
 }
 
 export interface GeocoderSearch {

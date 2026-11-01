@@ -6,6 +6,19 @@ for a 2 km radius from Overture Maps into PostGIS, and draws them in the browser
 Three.js in an anime street style: pastel walls with windows, clay-tile roofs, ink
 contours, crisp blue shadows, utility poles and a painted sky.
 
+Address searches also carry the country and city into the visual style. Brazil uses
+plaster/concrete colours, clay and slab roofs, and wider windows with slim frames;
+São Paulo has a city override with more slab roofs and blue street-name panels inspired
+by its signs. Panels show real names from the map, on both sides, along named streets.
+Other places keep the original building style and use neutral street-name panels.
+These are procedural visual profiles, not reconstructions of individual facades.
+
+Shared links preserve the style with `country=BR&city=São+Paulo` alongside `lat` and `lon`.
+Coordinates alone use the original style because they have no country/city metadata.
+New country profiles and city overrides belong in `apps/web/src/scene/architecture.ts`;
+they can change palettes, roof mix, window spacing/proportions and sign design without
+changing stored tiles or making additional map-source calls.
+
 ![Driving down a street at car speed (Shift): pastel houses with windows, utility poles and wires, a dashed centre line](docs/images/street-drive.gif)
 
 ![Circling above the area around Av. Bolonha, 200, São Paulo](docs/images/aerial-orbit.gif)

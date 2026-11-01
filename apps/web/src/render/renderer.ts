@@ -4,6 +4,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import type { FacadeStyle } from '../scene/architecture.js';
 import { GROUND_LAYERS } from '../scene/ground.js';
 import type { MeshData } from '../scene/mesh-buffer.js';
 import {
@@ -26,6 +27,7 @@ import type { BuiltScene } from '../scene/scene-builder.js';
 import { CROSSARM_Y_M, POLE_HEIGHT_M } from '../scene/street.js';
 import { Backdrop } from './backdrop.js';
 import { FACADE_FRAGMENT, FACADE_FRAGMENT_PARS, FACADE_VERTEX, FACADE_VERTEX_PARS } from './facade-shader.js';
+import { createStreetSigns } from './street-signs.js';
 
 export const EYE_HEIGHT_M = 1.7;
 const FOG_NEAR_M = 180;
@@ -129,7 +131,7 @@ export class SceneRenderer {
   setScene(built: BuiltScene): void {
     this.clear();
     const group = new THREE.Group();
-    const buildingMaterial = this.facadeMaterial();
+    const buildingMaterial = this.facadeMaterial(built.architecture.facade);
     for (const chunk of built.buildings) {
       group.add(this.mesh(chunk, buildingMaterial, true));
     }
@@ -152,6 +154,11 @@ export class SceneRenderer {
       group.add(mesh);
     });
     group.add(...this.trees(built), ...this.poles(built), this.marker());
+    if (built.streetSigns.length > 0) {
+      const signPostMaterial = this.toonMaterial({ color: 0x8f999f });
+      hideOutline(signPostMaterial);
+      group.add(createStreetSigns(built, signPostMaterial));
+    }
     this.content = group;
     this.scene.add(group);
     this.shadowCentre = undefined;
@@ -210,7 +217,7 @@ export class SceneRenderer {
    * from the facade attribute. Faces are pushed back a little so the contour lines on
    * their edges always win the depth test.
    */
-  private facadeMaterial(): THREE.MeshToonMaterial {
+  private facadeMaterial(facade: FacadeStyle): THREE.MeshToonMaterial {
     const material = this.toonMaterial({
       vertexColors: true,
       polygonOffset: true,
@@ -223,6 +230,11 @@ export class SceneRenderer {
       frameColour: { value: linearColour(FRAME_COLOUR) },
       trimColour: { value: linearColour(TRIM_COLOUR) },
       inkColour: { value: new THREE.Color(INK_COLOUR) },
+      storeyM: { value: facade.storeyM },
+      sillM: { value: facade.sillM },
+      headM: { value: facade.headM },
+      halfWindowM: { value: facade.halfWindowM },
+      frameM: { value: facade.frameM },
     };
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
@@ -351,15 +363,25 @@ export class SceneRenderer {
 
   private clear(): void {
     this.scene.remove(this.content);
+    const geometries = new Set<THREE.BufferGeometry>();
+    const materials = new Set<THREE.Material>();
+    const textures = new Set<THREE.Texture>();
     this.content.traverse((object) => {
       if (!isMesh(object)) {
         return;
       }
       const mesh = object;
-      mesh.geometry.dispose();
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      materials.forEach((material) => material.dispose());
+      geometries.add(mesh.geometry);
+      for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        materials.add(material);
+        if ('map' in material && material.map instanceof THREE.Texture) {
+          textures.add(material.map as THREE.Texture);
+        }
+      }
     });
+    geometries.forEach((geometry) => geometry.dispose());
+    materials.forEach((material) => material.dispose());
+    textures.forEach((texture) => texture.dispose());
     this.lineMaterials = [];
     this.content = new THREE.Group();
   }
