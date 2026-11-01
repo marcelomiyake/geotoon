@@ -30,16 +30,17 @@ const sleep = (ms: number): Promise<void> =>
 
 /** Retries `SELECT 1` until the database answers or `timeoutMs` passes. */
 export async function waitForDatabase(pool: pg.Pool, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    try {
-      await pool.query('SELECT 1');
-      return;
-    } catch (error) {
-      if (Date.now() > deadline) {
-        throw new Error('Database did not become reachable in time', { cause: error });
-      }
-      await sleep(1_000);
+  await retryUntil(pool, Date.now() + timeoutMs);
+}
+
+async function retryUntil(pool: pg.Pool, deadline: number): Promise<void> {
+  try {
+    await pool.query('SELECT 1');
+  } catch (error) {
+    if (Date.now() > deadline) {
+      throw new Error('Database did not become reachable in time', { cause: error });
     }
+    await sleep(1_000);
+    await retryUntil(pool, deadline);
   }
 }

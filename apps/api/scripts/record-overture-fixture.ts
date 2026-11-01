@@ -11,7 +11,7 @@ import { boundsOfTiles, tileOf, type TileKey } from '@geotoon/core';
 
 const RELEASE = '2026-10-21.0';
 const SOURCE = 's3://overturemaps-us-west-2/release';
-const POC = { lat: -23.548_581_7, lon: -46.746_914_4 };
+const POC = { lat: -23.5485817, lon: -46.7469144 };
 const LAND_SUBTYPES = "('tree', 'forest', 'grass', 'shrub')";
 
 const COMMON =
@@ -49,7 +49,8 @@ await connection.run('LOAD httpfs');
 await connection.run("SET s3_region = 'us-west-2'");
 
 await rm(outputRoot, { recursive: true, force: true });
-for (const layer of LAYERS) {
+
+async function recordLayer(layer: (typeof LAYERS)[number]): Promise<void> {
   const directory = path.join(outputRoot, `theme=${layer.theme}`, `type=${layer.type}`);
   await mkdir(directory, { recursive: true });
   const input = `${SOURCE}/${RELEASE}/theme=${layer.theme}/type=${layer.type}/*`;
@@ -65,5 +66,8 @@ for (const layer of LAYERS) {
   const rows = Number(count.getRowObjectsJS()[0]?.['n'] ?? 0);
   console.log(`${layer.theme}/${layer.type}: ${rows} rows in ${Date.now() - started} ms`);
 }
+
+// One layer at a time: each COPY streams remote Parquet files through the same connection.
+await LAYERS.reduce<Promise<void>>((previous, layer) => previous.then(() => recordLayer(layer)), Promise.resolve());
 connection.closeSync();
 instance.closeSync();

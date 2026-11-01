@@ -9,6 +9,7 @@ import {
   type IngestFeature,
   type TileKey,
 } from '@geotoon/core';
+import { inSequence } from '../in-sequence.js';
 
 /** Rows per INSERT statement. */
 export const UPSERT_BATCH_SIZE = 1000;
@@ -67,10 +68,12 @@ export class PgFeatureStore implements FeatureStore {
     try {
       await client.query('BEGIN');
       const unique = dedupeById(batch.features);
-      for (let start = 0; start < unique.length; start += UPSERT_BATCH_SIZE) {
-        const chunk = unique.slice(start, start + UPSERT_BATCH_SIZE);
+      const chunks = Array.from({ length: Math.ceil(unique.length / UPSERT_BATCH_SIZE) }, (_, index) =>
+        unique.slice(index * UPSERT_BATCH_SIZE, (index + 1) * UPSERT_BATCH_SIZE),
+      );
+      await inSequence(chunks, async (chunk) => {
         await client.query(UPSERT, [...featureColumns(chunk), batch.release]);
-      }
+      });
       const completed = await client.query<{ x: number; y: number }>(
         COMPLETE,
         completionParams(tiles, owner, batch.release, requestId),

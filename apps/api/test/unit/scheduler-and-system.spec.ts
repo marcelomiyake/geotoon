@@ -3,6 +3,7 @@ import type { IngestionJob, LogFields, Logger } from '@geotoon/core';
 import { pino } from 'pino';
 import { describe, expect, it } from 'vitest';
 import { InProcessScheduler } from '../../src/adapters/ingestion/in-process-scheduler.js';
+import { inSequence } from '../../src/adapters/in-sequence.js';
 import { PinoLogger } from '../../src/adapters/system/pino-logger.js';
 import { systemClock } from '../../src/adapters/system/system-clock.js';
 
@@ -101,5 +102,27 @@ describe('system adapters', () => {
     const now = systemClock.now().getTime();
     expect(now).toBeGreaterThanOrEqual(before);
     expect(now).toBeLessThanOrEqual(Date.now());
+  });
+});
+
+describe('inSequence', () => {
+  it('starts each step after the previous one finishes, in order', async () => {
+    const events: string[] = [];
+    await inSequence([30, 10, 20], async (ms) => {
+      events.push(`start ${ms}`);
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      events.push(`end ${ms}`);
+    });
+    expect(events).toEqual(['start 30', 'end 30', 'start 10', 'end 10', 'start 20', 'end 20']);
+  });
+
+  it('stops at the first failure', async () => {
+    const seen: number[] = [];
+    const run = inSequence([1, 2, 3], (n) => {
+      seen.push(n);
+      return n === 2 ? Promise.reject(new Error('step 2 failed')) : Promise.resolve();
+    });
+    await expect(run).rejects.toThrow('step 2 failed');
+    expect(seen).toEqual([1, 2]);
   });
 });
