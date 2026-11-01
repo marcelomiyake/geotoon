@@ -3,7 +3,7 @@ import { CollisionIndex } from './collision.js';
 import { type LocalPolygon, extrudePrism, normalisePolygon } from './extrude.js';
 import { type GroundLayer, LAYER_HEIGHT_M, addArea, addGroundDisc, layerForArea } from './ground.js';
 import { MeshBuffer, type MeshData, type Vec2 } from './mesh-buffer.js';
-import { ROOF_SHADE, buildingColour, lineColour } from './palette.js';
+import { buildingColours, lineColour } from './palette.js';
 import { type Projection, createProjection } from './projection.js';
 import { addRibbon } from './ribbons.js';
 import { type TreeInstances, buildTrees } from './trees.js';
@@ -19,6 +19,8 @@ export interface BuiltScene {
   readonly radiusM: number;
   /** One mesh per non-empty chunk. */
   readonly buildings: readonly MeshData[];
+  /** Contour segments per chunk, as x, y, z pairs (6 floats per segment). */
+  readonly buildingEdges: readonly Float32Array[];
   readonly ground: Readonly<Record<GroundLayer, MeshData>>;
   readonly trees: TreeInstances;
   readonly collision: CollisionIndex;
@@ -32,6 +34,7 @@ export interface SceneStats {
   readonly areas: number;
   readonly trees: number;
   readonly triangles: number;
+  readonly outlineSegments: number;
   readonly collisionEdges: number;
   readonly buildMs: number;
 }
@@ -50,7 +53,7 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     polygon.map((ring) => ring.map(([lon, lat]) => projection.toLocal(lon!, lat!)));
 
   const collision = new CollisionIndex();
-  const chunks = new Map<string, MeshBuffer>();
+  const chunks = new Map<string, { mesh: MeshBuffer; edges: number[] }>();
   for (const building of scene.buildings) {
     const polygons = building.footprint.map(project);
     const anchor = polygons[0]?.[0]?.[0];
@@ -58,21 +61,22 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
       continue;
     }
     const key = `${Math.floor(anchor[0] / CHUNK_SIZE_M)}:${Math.floor(anchor[1] / CHUNK_SIZE_M)}`;
-    let buildingBuffer = chunks.get(key);
-    if (buildingBuffer === undefined) {
-      buildingBuffer = new MeshBuffer();
-      chunks.set(key, buildingBuffer);
+    let chunk = chunks.get(key);
+    if (chunk === undefined) {
+      chunk = { mesh: new MeshBuffer(), edges: [] };
+      chunks.set(key, chunk);
     }
-    const wall = buildingColour(building.id);
+    const colours = buildingColours(building.id);
     extrudePrism(
       {
         polygons,
         baseY: building.minHeightM,
         topY: building.heightM,
-        wallColour: wall,
-        roofColour: [wall[0] * ROOF_SHADE, wall[1] * ROOF_SHADE, wall[2] * ROOF_SHADE],
+        wallColour: colours.wall,
+        roofColour: colours.roof,
       },
-      buildingBuffer,
+      chunk.mesh,
+      chunk.edges,
     );
     if (building.minHeightM < 2) {
       addFootprintEdges(polygons, collision);
@@ -102,7 +106,11 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
   const trees = buildTrees(scene.trees.map(([lon, lat]) => projection.toLocal(lon, lat)));
   const [spawnX, spawnZ] = projection.toLocal(scene.spawn.lon, scene.spawn.lat);
 
-  const buildings = [...chunks.values()].map((chunk) => chunk.toMeshData()).filter((m) => m.triangles > 0);
+  const buildings = [...chunks.values()].map((chunk) => chunk.mesh.toMeshData()).filter((m) => m.triangles > 0);
+  const buildingEdges = [...chunks.values()]
+    .filter((chunk) => chunk.edges.length > 0)
+    .map((chunk) => new Float32Array(chunk.edges));
+  const outlineSegments = buildingEdges.reduce((sum, edges) => sum + edges.length / 6, 0);
   const groundData = {
     base: ground.base.toMeshData(),
     landuse: ground.landuse.toMeshData(),
@@ -118,6 +126,7 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     projection,
     radiusM: area.radiusM,
     buildings,
+    buildingEdges,
     ground: groundData,
     trees,
     collision,
@@ -128,6 +137,7 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
       areas: scene.areas.length,
       trees: trees.count,
       triangles,
+      outlineSegments,
       collisionEdges: collision.size,
       buildMs: Math.round(now() - started),
     },
