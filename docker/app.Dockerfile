@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # GeoToon app image: API, built web client, migrations and the DuckDB httpfs extension.
-ARG NODE_IMAGE=node:26-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
+# node:26-bookworm-slim, pinned by digest (update the tag in this comment with the digest).
+ARG NODE_IMAGE=node@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
 
 FROM ${NODE_IMAGE} AS build
 WORKDIR /src
@@ -10,7 +11,8 @@ COPY packages/core/package.json packages/core/
 COPY packages/contracts/package.json packages/contracts/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
-RUN npm ci --no-audit --no-fund
+# Only dev-only test tooling has install scripts; the shipped dependencies need none.
+RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY packages packages
 COPY apps apps
 RUN npm run build && npm prune --omit=dev --no-audit --no-fund
@@ -31,8 +33,9 @@ WORKDIR /app
 # DuckDB's httpfs uses its own TLS stack and needs the system CA bundle to reach S3.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-RUN groupadd --gid 10001 geotoon && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin geotoon
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 geotoon \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin geotoon
 COPY --from=build /src/package.json ./
 COPY --from=build /src/node_modules ./node_modules
 COPY --from=build /src/packages/core/package.json packages/core/
