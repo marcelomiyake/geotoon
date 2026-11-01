@@ -16,12 +16,20 @@ export default defineConfig({
         extends: true,
         test: { name: 'contracts', include: ['packages/contracts/test/**/*.spec.ts'] },
       },
-      { extends: true, test: { name: 'api-unit', include: ['apps/api/test/unit/**/*.spec.ts'] } },
+      {
+        extends: true,
+        test: {
+          name: 'api-unit',
+          include: ['apps/api/test/unit/**/*.spec.ts'],
+          globalSetup: ['apps/api/test/global-setup.ts'],
+        },
+      },
       {
         extends: true,
         test: {
           name: 'api-integration',
           include: ['apps/api/test/integration/**/*.spec.ts'],
+          globalSetup: ['apps/api/test/global-setup.ts'],
           // Each file starts its own PostGIS container; running them one at a time keeps
           // memory use predictable on a laptop.
           fileParallelism: false,
