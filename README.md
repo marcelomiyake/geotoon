@@ -14,7 +14,8 @@ The first visit to an area downloads its map data (about 80 s for 2 km); every l
 visit to the same area reads only from PostGIS.
 
 The design, with the reasons behind each choice, is in
-[docs/designs/geotoon.md](docs/designs/geotoon.md).
+[docs/designs/geotoon.md](docs/designs/geotoon.md). Rules for changing the code (layers,
+bounded contexts, the SonarCloud quality gate, commits) are in [AGENTS.md](AGENTS.md).
 
 ## Prerequisites
 
@@ -59,6 +60,7 @@ To reach the app on <http://localhost:8090> through the Kind port mapping instea
 | Command | What it does |
 | --- | --- |
 | `make setup` | Install dependencies (`npm ci`). |
+| `make lsp` | Install the TypeScript language server that Claude Code's `typescript-lsp` plugin starts (enabled in `.claude/settings.json`). |
 | `make dev` | PostGIS in Docker, the API on :8080 and Vite on :5173 (proxying `/api`). |
 | `make build` | Build every package and the web client. |
 | `make typecheck` | Type-check every package. |
@@ -73,7 +75,7 @@ To reach the app on <http://localhost:8090> through the Kind port mapping instea
 | `make sonar` | Run the SonarCloud scan (needs `SONAR_TOKEN`; run `make test` first for coverage). |
 | `make kind-down` | Delete the Kind cluster. |
 
-`make test` is the test command. It runs 239 tests in 18 files: the domain and use cases,
+`make test` is the test command. It runs 242 tests in 18 files: the domain and use cases,
 the API contracts, the HTTP API, the Overture and Photon adapters against recorded
 fixtures, the PostGIS adapters and the full area flow against a real PostGIS, and the
 scene geometry the browser draws.
@@ -210,3 +212,54 @@ acceleration turned on.
 - **Look.** After the first build, the owner asked for more vivid colours with anime
   contours, and then for the style of an anime street reference image (pastel houses,
   clay roofs, utility poles and wires, cyan sky with clouds, crisp blue shadows).
+- **Speed.** The design's walking speeds (1.4 m/s, 4 m/s with Shift) were too slow for a
+  2 km area. Movement is now 6 m/s, and 15 m/s with Shift.
+
+## How this project was built
+
+GeoToon was planned and written by [Claude Code](https://claude.com/claude-code), with the
+owner approving each step.
+
+| | |
+| --- | --- |
+| Model | Claude Opus 5.5 (`claude-opus-5-5`) for every request, in the main session and in all 7 subagents |
+| Effort | `xhigh` on every turn |
+| Planning method | [Elephant-Goldfish Model](https://github.com/google/elephant-goldfish-model) (EGM) |
+| Elapsed time | about 6 hours (2026-11-01, 14:27 to 20:23 UTC) |
+| Initial cost | about **US$60** at Claude API list prices (table below) |
+
+**Planning with EGM.** The `/egm-brainstorm` stage turned the owner's checklist into
+[concepts_brief.md](concepts_brief.md): the main session (the "elephant", which keeps the
+whole conversation) asked clarifying questions, then six "goldfish" reviewers (fresh
+subagents with no history) critiqued the idea from separate angles (design, codebase
+details, scope, comprehension, implementation readiness, structure). The `/egm-draft`
+stage wrote [docs/designs/geotoon.md](docs/designs/geotoon.md), with each section reviewed
+the same way and approved by the owner. The elephant then implemented the design. Each
+commit records its stage and agent in `EGM-Stage` and `EGM-Agent` footers, so
+`git log` shows which stage produced which files.
+
+**Cost.** Token counts come from the Claude Code transcripts of this project
+(`~/.claude/projects/-home-marcelomiyake-projects-geotoon/`, the main session and its
+subagents), counting each API response once (by message id and request id). Prices are the
+standard rates for Claude Opus 5.5 on the
+[pricing page](https://platform.claude.com/docs/en/about-claude/pricing) as of 2026-11-01.
+
+| Token type | Tokens | Price per million | Cost (US$) |
+| --- | ---: | ---: | ---: |
+| Input (not cached) | 1,176 | $4.00 | 0.00 |
+| Cache writes, 5-minute | 406,530 | $5.00 | 2.03 |
+| Cache writes, 1-hour | 1,739,584 | $8.00 | 13.92 |
+| Cache reads | 117,585,858 | $0.20 | 23.52 |
+| Output (including thinking) | 1,049,660 | $20.00 | 20.99 |
+| **Total** (575 API responses) | | | **60.46** |
+
+- Prompt caching did most of the saving: the same input tokens at the base input price
+  would have cost about US$500.
+- Every request ran at standard speed (no fast mode), on the standard service tier, with
+  global inference routing, so no price multiplier applies. No server-side web searches
+  were made.
+- Not counted: the small helper-model calls Claude Code makes to summarise fetched web
+  pages, which the transcripts do not record, and the work after the measurement
+  (2026-11-01 20:23 UTC), such as this section's own pull request.
+- This is the API list-price equivalent. Usage under a Claude subscription is billed by
+  the plan, not per token.
