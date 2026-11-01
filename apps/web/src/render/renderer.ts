@@ -28,6 +28,7 @@ import { CROSSARM_Y_M, POLE_HEIGHT_M } from '../scene/street.js';
 import { Backdrop } from './backdrop.js';
 import { FACADE_FRAGMENT, FACADE_FRAGMENT_PARS, FACADE_VERTEX, FACADE_VERTEX_PARS } from './facade-shader.js';
 import { createStreetSigns } from './street-signs.js';
+import { TrafficLights } from './traffic-lights.js';
 
 export const EYE_HEIGHT_M = 1.7;
 const FOG_NEAR_M = 180;
@@ -64,6 +65,7 @@ export class SceneRenderer {
   private shadowCentre: THREE.Vector2 | undefined;
   private content = new THREE.Group();
   private lineMaterials: LineMaterial[] = [];
+  private trafficLights: TrafficLights | undefined;
   private readonly resizeObserver: ResizeObserver;
 
   constructor(
@@ -144,9 +146,12 @@ export class SceneRenderer {
       }
       const material = this.toonMaterial({
         vertexColors: true,
+        // Paint overlays in layer/triangle order. Coplanar road ribbons must not
+        // compete in the depth buffer; terrain and buildings still occlude them.
+        depthWrite: layer === 'base',
         polygonOffset: true,
-        polygonOffsetFactor: -index,
-        polygonOffsetUnits: -index * 4,
+        polygonOffsetFactor: 0,
+        polygonOffsetUnits: -index,
       });
       hideOutline(material);
       const mesh = this.mesh(data, material, false);
@@ -159,12 +164,20 @@ export class SceneRenderer {
       hideOutline(signPostMaterial);
       group.add(createStreetSigns(built, signPostMaterial));
     }
+    this.trafficLights = undefined;
+    if (built.trafficLights.length > 0) {
+      const poleMaterial = this.toonMaterial({ color: built.architecture.streetSign === 'generic' ? 0x8f999f : 0xe8b137 });
+      hideOutline(poleMaterial);
+      this.trafficLights = new TrafficLights(built, poleMaterial);
+      group.add(this.trafficLights.group);
+    }
     this.content = group;
     this.scene.add(group);
     this.shadowCentre = undefined;
   }
 
-  render(): void {
+  render(seconds = performance.now() / 1000): void {
+    this.trafficLights?.update(seconds);
     this.followWithShadows();
     this.backdrop.follow(this.camera);
     this.renderer.clear();

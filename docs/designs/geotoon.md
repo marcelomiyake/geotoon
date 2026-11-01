@@ -515,28 +515,45 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
     still prevent unsuitable pitched roofs. These are artistic presentation defaults,
     not measured facade or roof facts. Other countries retain the original style.
 
-    `scene/street-signs.ts` places panels parallel to named surface streets, on the
-    sidewalk, set back from segment ends and repeated on long segments. It omits
-    highways, paths, water, rail, short/unnamed lines, positions outside the area and
-    positions reached only by crossing a building wall. Nearby duplicates are removed;
-    at most 128 panels nearest the address are rendered. Names come from `scene.lines`,
-    including accents. Brazil uses an illustrative blue/white country fallback;
-    São Paulo overrides it with a pale footer inspired by the
-    [owner's sign reference](https://www.estadao.com.br/resizer/v2/RVUG6E2FFFE75IFKZ2HXRT7YEU.jpg?quality=80&auth=397aa491cda14e760d0663f169cbe2f3bac2713aa40359578d34dd57f2d682c5&height=1600).
-    Other places use neutral panels. No address ranges or postal codes are invented.
-    `render/street-signs.ts` draws lettering into one bounded canvas atlas shared by
-    both readable faces of every panel, with instanced posts. Scene replacement
-    disposes the atlas along with geometries and materials. The reference photograph
-    is not bundled as a texture or fixture.
+    `scene/intersections.ts` groups connected surface-street vertices within 0.75 m,
+    merges duplicate outgoing arms, and retains junctions with two distinct named
+    streets and nonparallel arms. It does not intersect arbitrary lines, so an
+    unconnected geometric crossing is not treated as a junction. Bends and same-name
+    splits do not acquire street signs. Work is bounded to the nearest 128 junctions
+    within the area. The source currently lacks grade-separation metadata, so shared
+    geometry is an inference, not proof of an at-grade intersection.
+
+    `scene/street-signs.ts` places one paired sign on a clear sidewalk corner of each
+    junction. Two panels meet at one post and follow the respective street directions,
+    as in the [owner’s corner-sign reference](https://site.sorriso.mt.gov.br/storage/app/uploads/public/943/88a/3a5/thumb__1280_0_0_0_auto.jpg).
+    Corners outside the area, crowded corners and paths through building walls are
+    omitted. Names come from `scene.lines`, including accents. Brazil uses blue/white
+    panels, with a pale São Paulo footer; other places use neutral panels. No address
+    ranges or postal codes are invented. `render/street-signs.ts` uses one shared text
+    atlas for both readable faces and instanced posts. Scene replacement disposes the
+    atlas, geometry and materials. Reference photographs are not bundled as textures.
+
+    `scene/traffic.ts` places 3 m zebra crossings across sufficiently long approaches
+    at junctions with at least three arms. Signal poles sit on the incoming driver's
+    right, behind the crossing, at junctions involving primary, secondary or tertiary
+    roads. Buildings and area bounds constrain pole placement; closely spaced crossings
+    are deduplicated. These are illustrative inferred placements, not surveyed crossing
+    locations or real signal timing. Opposing approaches share a 48 s cycle: 18 s green,
+    3 s amber, 3 s all-red, then the other axis. Crossings are draped onto the same
+    terrain planes as roads. Signals use four shared instanced meshes, and lamp colours
+    update only on phase changes.
 *   **Scene builder** (pure TypeScript, tested in Node). It turns the
     contract into typed arrays:
     *   buildings: walls plus roofs triangulated with earcut, merged into
         one geometry with per-building vertex colours (a deterministic
         palette keyed on id);
     *   streets: ribbons of `widthM` (a width per kind);
-    *   areas: flat polygons with a fixed height step per layer (water 2 cm,
-        parks 3 cm, roads 5 cm) and polygon offset, so they do not flicker
-        at eye height;
+    *   areas: polygons with a fixed height step per layer (water 2 cm,
+        parks 3 cm, roads 5 cm), draped onto terrain when available. The base ground
+        writes depth; overlays test depth against terrain/buildings but do not write
+        it. Layer and triangle order therefore determine overlapping paint colours,
+        avoiding coplanar road ribbons fighting for depth. Polygon offset uses only
+        small constant units, with no camera-dependent slope factor;
     *   trees: one instanced mesh;
     *   a collision index of footprint edges in a 20 m grid.
 

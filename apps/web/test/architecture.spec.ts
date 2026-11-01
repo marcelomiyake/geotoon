@@ -56,6 +56,6 @@ describe('local architecture profiles', () => {
     expect(local.streetSigns.length).toBeGreaterThan(0);
     expect(local.stats.streetSigns).toBe(local.streetSigns.length);
     const names = new Set(ready.scene.lines.map((line) => line.name));
-    expect(local.streetSigns.every((sign) => names.has(sign.name))).toBe(true);
+    expect(local.streetSigns.every((sign) => sign.panels.every((panel) => names.has(panel.name)))).toBe(true);
   });
 });
