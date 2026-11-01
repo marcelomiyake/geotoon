@@ -1,0 +1,39 @@
+{
+  "name": "geotoon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Walkable cel-shaded 3D map of any address, built from open map data.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/contracts",
+    "apps/api",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json && npm run build -w @geotoon/web",
+    "typecheck": "tsc -p packages/core && tsc -p packages/contracts && tsc -p apps/api && tsc -p apps/web",
+    "lint": "eslint . && depcruise packages apps --config .dependency-cruiser.cjs",
+    "test": "vitest run --coverage",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@testcontainers/postgresql": "12.2.1",
+    "@types/node": "26.6.6",
+    "@vitest/coverage-v8": "5.0.5",
+    "dependency-cruiser": "18.7.0",
+    "eslint": "10.14.0",
+    "eslint-plugin-sonarjs": "4.2.2",
+    "globals": "17.14.0",
+    "testcontainers": "12.2.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.0.5"
+  }
+}

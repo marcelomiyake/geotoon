@@ -1,0 +1,29 @@
+{
+  "name": "@geotoon/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GeoToon HTTP API, adapters and composition root.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "start": "node dist/main.js",
+    "dev": "node --watch --env-file-if-exists=../../.env --conditions=@geotoon/source --experimental-strip-types src/main.ts"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "2.0.0-r.1",
+    "@fastify/compress": "9.3.0",
+    "@fastify/rate-limit": "11.2.1",
+    "@fastify/static": "10.1.8",
+    "@geotoon/contracts": "0.1.0",
+    "@geotoon/core": "0.1.0",
+    "fastify": "5.12.7",
+    "pg": "8.23.1",
+    "pino": "10.4.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "undici": "8.12.3"
+  }
+}
