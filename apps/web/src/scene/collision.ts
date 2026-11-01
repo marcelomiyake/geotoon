@@ -4,6 +4,11 @@ export interface Point2 {
 }
 
 export const WALKER_RADIUS_M = 0.3;
+/**
+ * Longest move resolved at once. Walls are zero-thickness edges, so a move longer than the
+ * walker's diameter could jump over one; `move` splits longer moves into steps this short.
+ */
+export const MAX_SUBSTEP_M = 0.25;
 const PUSH_EPSILON = 1e-3;
 const ITERATIONS = 3;
 
@@ -53,6 +58,22 @@ export class CollisionIndex {
       }
     }
     return found;
+  }
+
+  /**
+   * Moves a circle of `radius` from `from` to `to` in steps of at most `MAX_SUBSTEP_M`
+   * (or `radius`, if smaller), resolving walls after each step, so fast moves cannot pass
+   * through a wall.
+   */
+  move(from: Point2, to: Point2, radius = WALKER_RADIUS_M): Point2 {
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / Math.min(MAX_SUBSTEP_M, radius)));
+    let position = from;
+    for (let step = 0; step < steps; step += 1) {
+      position = this.resolve(position, { x: position.x + dx / steps, z: position.z + dz / steps }, radius);
+    }
+    return position;
   }
 
   /**
