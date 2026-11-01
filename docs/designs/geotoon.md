@@ -1,7 +1,7 @@
 # GeoToon: Walkable Cel-Shaded 3D Map Built from Open Map Data
 
 *   **Author:** Marcelo Miyake
-*   **Status:** Draft
+*   **Status:** Approved (all sections approved by the owner, 2026-11-01)
 *   **Date:** 2026-11-01
 
 --------------------------------------------------------------------------------
