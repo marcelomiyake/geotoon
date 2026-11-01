@@ -1,13 +1,24 @@
 import type { Rgb } from './palette.js';
 
 export type Vec2 = readonly [number, number];
+export type Vec3 = readonly [number, number, number];
 export type Ring = readonly Vec2[];
+
+/**
+ * Per-vertex facade coordinates for building walls, read by the window shader: window slot
+ * (0..n along the wall), metres below the wall top, and slot width in metres. This value
+ * marks faces that are not walls (roofs, gables): no windows and no roof trim.
+ */
+export const NO_FACADE: Vec3 = [0, -1, 0];
+const NO_FACADES: readonly [Vec3, Vec3, Vec3] = [NO_FACADE, NO_FACADE, NO_FACADE];
 
 /** Non-indexed triangle soup with flat normals and per-vertex colours. */
 export interface MeshData {
   readonly positions: Float32Array;
   readonly normals: Float32Array;
   readonly colors: Float32Array;
+  /** Facade coordinates (3 floats per vertex); only on buffers created with `facade: true`. */
+  readonly facade?: Float32Array;
   readonly triangles: number;
 }
 
@@ -16,23 +27,37 @@ export class MeshBuffer {
   private readonly positions: number[] = [];
   private readonly normals: number[] = [];
   private readonly colors: number[] = [];
+  private readonly facade: number[] | undefined;
+
+  constructor(options?: { readonly facade?: boolean }) {
+    this.facade = options?.facade === true ? [] : undefined;
+  }
 
   get triangles(): number {
     return this.positions.length / 9;
   }
 
   /** Adds one triangle; the vertex order must already be counter-clockwise seen from the normal. */
-  triangle(
-    a: readonly [number, number, number],
-    b: readonly [number, number, number],
-    c: readonly [number, number, number],
-    normal: readonly [number, number, number],
-    colour: Rgb,
-  ): void {
+  triangle(a: Vec3, b: Vec3, c: Vec3, normal: Vec3, colour: Rgb, facade = NO_FACADES): void {
     this.positions.push(...a, ...b, ...c);
-    for (let i = 0; i < 3; i += 1) {
-      this.normals.push(...normal);
-      this.colors.push(...colour);
+    this.normals.push(...normal, ...normal, ...normal);
+    this.colors.push(...colour, ...colour, ...colour);
+    this.facade?.push(...facade[0], ...facade[1], ...facade[2]);
+  }
+
+  /**
+   * Adds a planar quad p0-p1-p2-p3 (in order around its edge), front side toward `facing`:
+   * the winding is flipped when its normal points away from that direction.
+   */
+  quad(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, colour: Rgb, facing: Vec3): void {
+    const normal = faceNormal(p0, p1, p2);
+    if (normal[0] * facing[0] + normal[1] * facing[1] + normal[2] * facing[2] >= 0) {
+      this.triangle(p0, p1, p2, normal, colour);
+      this.triangle(p0, p2, p3, normal, colour);
+    } else {
+      const flipped: Vec3 = [-normal[0], -normal[1], -normal[2]];
+      this.triangle(p0, p2, p1, flipped, colour);
+      this.triangle(p0, p3, p2, flipped, colour);
     }
   }
 
@@ -49,9 +74,25 @@ export class MeshBuffer {
       positions: new Float32Array(this.positions),
       normals: new Float32Array(this.normals),
       colors: new Float32Array(this.colors),
+      ...(this.facade === undefined ? {} : { facade: new Float32Array(this.facade) }),
       triangles: this.triangles,
     };
   }
+}
+
+/** Unit normal of the triangle a-b-c (counter-clockwise seen from the normal side). */
+export function faceNormal(a: Vec3, b: Vec3, c: Vec3): Vec3 {
+  const ux = b[0] - a[0];
+  const uy = b[1] - a[1];
+  const uz = b[2] - a[2];
+  const vx = c[0] - a[0];
+  const vy = c[1] - a[1];
+  const vz = c[2] - a[2];
+  const nx = uy * vz - uz * vy;
+  const ny = uz * vx - ux * vz;
+  const nz = ux * vy - uy * vx;
+  const length = Math.hypot(nx, ny, nz) || 1;
+  return [nx / length, ny / length, nz / length];
 }
 
 /** Signed area in the x/z plane; positive is counter-clockwise seen from above (+y). */
@@ -86,4 +127,21 @@ export function openRing(ring: Ring): Vec2[] {
 export function orient(ring: Ring, counterClockwise: boolean): Vec2[] {
   const copy = [...ring];
   return signedArea(copy) > 0 === counterClockwise ? copy : copy.reverse();
+}
+
+/** Corners that turn more than this get a vertical contour; gentle bends (curved walls) do not. */
+export const CREASE_ANGLE_DEG = 30;
+const CREASE_COS = Math.cos((CREASE_ANGLE_DEG * Math.PI) / 180);
+
+/** Whether the outline turns at `b` by more than {@link CREASE_ANGLE_DEG}. */
+export function isCorner(a: Vec2, b: Vec2, c: Vec2): boolean {
+  const ux = b[0] - a[0];
+  const uz = b[1] - a[1];
+  const vx = c[0] - b[0];
+  const vz = c[1] - b[1];
+  const lengths = Math.hypot(ux, uz) * Math.hypot(vx, vz);
+  if (lengths < 1e-12) {
+    return false;
+  }
+  return (ux * vx + uz * vz) / lengths < CREASE_COS;
 }

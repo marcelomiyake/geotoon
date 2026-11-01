@@ -3,7 +3,10 @@ import { type MeshBuffer, type Vec2 } from './mesh-buffer.js';
 import { GROUND_COLOUR, areaColour } from './palette.js';
 
 /** Ground layers, drawn as separate meshes with their own polygon offset. */
-export type GroundLayer = 'base' | 'landuse' | 'green' | 'water' | 'roads';
+export type GroundLayer = 'base' | 'landuse' | 'green' | 'water' | 'sidewalks' | 'roads' | 'markings';
+
+/** Every ground layer, bottom first: the draw order and polygon-offset order. */
+export const GROUND_LAYERS: readonly GroundLayer[] = ['base', 'landuse', 'water', 'green', 'sidewalks', 'roads', 'markings'];
 
 /** Height of each layer above the base, so flat layers do not flicker at eye height. */
 export const LAYER_HEIGHT_M: Readonly<Record<GroundLayer, number>> = {
@@ -11,7 +14,9 @@ export const LAYER_HEIGHT_M: Readonly<Record<GroundLayer, number>> = {
   landuse: 0.01,
   water: 0.02,
   green: 0.03,
+  sidewalks: 0.04,
   roads: 0.05,
+  markings: 0.06,
 };
 
 const GREEN_KINDS: ReadonlySet<string> = new Set(['park', 'grass', 'pitch', 'forest']);
