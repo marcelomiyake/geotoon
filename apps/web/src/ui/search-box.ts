@@ -70,11 +70,7 @@ export class SearchBox {
         return;
       }
       this.render(suggestions);
-      this.setStatus(
-        suggestions.length === 0
-          ? 'No address found. Add the city, or paste coordinates as "lat, lon".'
-          : `${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'}.`,
-      );
+      this.setStatus(suggestionStatus(suggestions.length));
     } catch (error) {
       if (controller.signal.aborted) {
         return;
@@ -155,6 +151,13 @@ export class SearchBox {
   private setStatus(text: string): void {
     this.options.status.textContent = text;
   }
+}
+
+function suggestionStatus(count: number): string {
+  if (count === 0) {
+    return 'No address found. Add the city, or paste coordinates as "lat, lon".';
+  }
+  return count === 1 ? '1 suggestion.' : `${count} suggestions.`;
 }
 
 export function searchErrorMessage(error: unknown): string {

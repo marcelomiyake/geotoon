@@ -1,14 +1,20 @@
 export const MIN_QUERY_CHARS = 3;
 export const DEBOUNCE_MS = 300;
+/** A signed decimal degree such as -23.5485 (no exponent, no thousands separator). */
+const DECIMAL_DEGREES = /^-?\d{1,3}(?:\.\d+)?$/;
 
 /** Parses "lat, lon" (also "lat lon" or "lat;lon"); returns undefined when it is not a pair. */
 export function parseLatLon(text: string): { lat: number; lon: number } | undefined {
-  const match = /^\s*(-?\d{1,2}(?:\.\d+)?)\s*[,; ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/.exec(text);
-  if (!match) {
+  const parts = text.trim().split(/[\s,;]+/);
+  const [latText, lonText] = parts;
+  if (parts.length !== 2 || latText === undefined || lonText === undefined) {
     return undefined;
   }
-  const lat = Number(match[1]);
-  const lon = Number(match[2]);
+  if (!DECIMAL_DEGREES.test(latText) || !DECIMAL_DEGREES.test(lonText)) {
+    return undefined;
+  }
+  const lat = Number(latText);
+  const lon = Number(lonText);
   if (Math.abs(lat) > 90 || Math.abs(lon) > 180) {
     return undefined;
   }
