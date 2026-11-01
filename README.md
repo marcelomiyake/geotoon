@@ -19,9 +19,12 @@ New country profiles and city overrides belong in `apps/web/src/scene/architectu
 they can change palettes, roof mix, window spacing/proportions and sign design without
 changing stored tiles or making additional map-source calls.
 
-![Driving down a street at car speed (Shift): pastel houses with windows, utility poles and wires, a dashed centre line](docs/images/street-drive.gif)
+![Street-level tour of Avenida Bolonha, São Paulo: blue street-name signs, local building colours and windows, utility poles and wires](docs/images/street-drive.gif)
 
-![Circling above the area around Av. Bolonha, 200, São Paulo](docs/images/aerial-orbit.gif)
+![Aerial orbit around Av. Bolonha, 200, São Paulo: local façades, concrete slabs and clay roofs in the cel-shaded neighbourhood](docs/images/aerial-orbit.gif)
+
+Recorded from the local Kind deployment with the São Paulo profile: a 10-second street
+tour and a 6-second aerial orbit. Both animations retain the map-data attribution.
 
 The first visit to an area downloads its map data (about 80 s for 2 km); every later
 visit to the same area reads only from PostGIS.
