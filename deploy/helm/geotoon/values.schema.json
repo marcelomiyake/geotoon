@@ -79,8 +79,8 @@
       "type": "object",
       "required": ["requests", "limits"],
       "properties": {
-        "requests": { "type": "object", "required": ["cpu", "memory"] },
-        "limits": { "type": "object", "required": ["cpu", "memory"] }
+        "requests": { "type": "object", "required": ["cpu", "memory", "ephemeral-storage"] },
+        "limits": { "type": "object", "required": ["cpu", "memory", "ephemeral-storage"] }
       }
     }
   }

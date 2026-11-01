@@ -33,13 +33,16 @@ rateLimits:
 
 logLevel: info
 
+# ephemeral-storage covers the 2Gi DuckDB spill volume (/tmp) plus logs.
 resources:
   requests:
     cpu: 500m
     memory: 1Gi
+    ephemeral-storage: 256Mi
   limits:
     cpu: "2"
     memory: 2Gi
+    ephemeral-storage: 3Gi
 
 postgresql:
   image: postgis/postgis:17-3.6@sha256:1ac10b2551ba84ae05db8e7da477afcd0a3fede99bcb7705da2ee157390cb095
@@ -48,10 +51,13 @@ postgresql:
   storage: 2Gi
   # Empty uses the cluster default StorageClass.
   storageClassName: ""
+  # Table data lives on the volume claim; ephemeral-storage covers sockets and logs.
   resources:
     requests:
       cpu: 250m
       memory: 512Mi
+      ephemeral-storage: 64Mi
     limits:
       cpu: "1"
       memory: 1Gi
+      ephemeral-storage: 512Mi
