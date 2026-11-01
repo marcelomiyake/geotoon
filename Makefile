@@ -6,14 +6,18 @@ IMAGE ?= geotoon-app
 CLUSTER ?= geotoon
 NAMESPACE ?= geotoon
 PG_DEV_CONTAINER ?= geotoon-pg-dev
+TS_LSP_VERSION ?= 6.0.2
 
-.PHONY: help setup dev db-up db-down build typecheck lint test images kind-up kind-load deploy open verify-cache sonar kind-down
+.PHONY: help setup lsp dev db-up db-down build typecheck lint test images kind-up kind-load deploy open verify-cache sonar kind-down
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
 setup: ## Install dependencies (npm ci)
 	npm ci
+
+lsp: ## Install the TypeScript language server for Claude Code's typescript-lsp plugin (global npm)
+	npm install -g typescript-language-server@$(TS_LSP_VERSION)
 
 db-up: ## Start a local PostGIS container on port 5432
 	docker start $(PG_DEV_CONTAINER) 2>/dev/null || docker run -d --name $(PG_DEV_CONTAINER) \
