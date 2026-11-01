@@ -11,11 +11,14 @@ import { type TreeInstances, buildTrees } from './trees.js';
 /** The ground disc reaches this far past the area radius. */
 export const GROUND_MARGIN_M = 50;
 const GROUND_SEGMENTS = 96;
+/** Buildings are grouped into square chunks so the renderer can cull distant ones. */
+export const CHUNK_SIZE_M = 250;
 
 export interface BuiltScene {
   readonly projection: Projection;
   readonly radiusM: number;
-  readonly buildings: MeshData;
+  /** One mesh per non-empty chunk. */
+  readonly buildings: readonly MeshData[];
   readonly ground: Readonly<Record<GroundLayer, MeshData>>;
   readonly trees: TreeInstances;
   readonly collision: CollisionIndex;
@@ -47,9 +50,19 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     polygon.map((ring) => ring.map(([lon, lat]) => projection.toLocal(lon!, lat!)));
 
   const collision = new CollisionIndex();
-  const buildingBuffer = new MeshBuffer();
+  const chunks = new Map<string, MeshBuffer>();
   for (const building of scene.buildings) {
     const polygons = building.footprint.map(project);
+    const anchor = polygons[0]?.[0]?.[0];
+    if (anchor === undefined) {
+      continue;
+    }
+    const key = `${Math.floor(anchor[0] / CHUNK_SIZE_M)}:${Math.floor(anchor[1] / CHUNK_SIZE_M)}`;
+    let buildingBuffer = chunks.get(key);
+    if (buildingBuffer === undefined) {
+      buildingBuffer = new MeshBuffer();
+      chunks.set(key, buildingBuffer);
+    }
     const wall = buildingColour(building.id);
     extrudePrism(
       {
@@ -89,7 +102,7 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
   const trees = buildTrees(scene.trees.map(([lon, lat]) => projection.toLocal(lon, lat)));
   const [spawnX, spawnZ] = projection.toLocal(scene.spawn.lon, scene.spawn.lat);
 
-  const buildings = buildingBuffer.toMeshData();
+  const buildings = [...chunks.values()].map((chunk) => chunk.toMeshData()).filter((m) => m.triangles > 0);
   const groundData = {
     base: ground.base.toMeshData(),
     landuse: ground.landuse.toMeshData(),
@@ -97,8 +110,10 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     water: ground.water.toMeshData(),
     roads: ground.roads.toMeshData(),
   };
-  const triangles =
-    buildings.triangles + Object.values(groundData).reduce((sum, mesh) => sum + mesh.triangles, 0);
+  const triangles = [...buildings, ...Object.values(groundData)].reduce(
+    (sum, mesh) => sum + mesh.triangles,
+    0,
+  );
   return {
     projection,
     radiusM: area.radiusM,
