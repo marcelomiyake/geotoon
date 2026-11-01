@@ -65,6 +65,6 @@ export function buildingAppearance(building: SceneBuilding, style: ArchitectureS
   return {
     colours: buildingColours(building.id, style.palette),
     pitched: building.minHeightM < 0.5 && !FLAT_ROOF_KINDS.has(building.kind)
-      && fnv1a32(`${building.id}:roof`) / 0x1_0000_0000 < style.pitchedRoofFraction,
+      && fnv1a32(`${building.id}:roof`) / 2 ** 32 < style.pitchedRoofFraction,
   };
 }
