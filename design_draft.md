@@ -802,3 +802,992 @@ The owner kept the draft's version of each of these items from
 
 --------------------------------------------------------------------------------
 
+## Detailed Implementation Plan
+
+Build order: scaffold (§1) → core (§2) → contracts (§3) → API and adapters
+(§4) → web client (§5) → fixtures and offline tests (§6) → image, chart and
+Kind (§7) → SonarCloud (§8) → measurements and docs (§9). Every path below is
+relative to the repository root.
+
+### Target Files to Create/Modify
+
+#### 1. Repository scaffold
+
+##### 1.1 `./.gitignore` (Modify)
+
+*   **Type / Scope**: Repository configuration.
+*   **Proposed Changes**:
+    *   Replace the Rust template. Its bare `debug` and `target` patterns
+        would hide folders at any depth.
+    *   New entries: `node_modules/`, `dist/`, `coverage/`, `.scannerwork/`,
+        `.env*` (except `.env.example`), `*.duckdb*`, `kubeconfig*`,
+        `*.tgz`, `.vite/`.
+
+##### 1.2 `./.nvmrc` (Create)
+
+*   **Type / Scope**: Toolchain pin.
+*   **Proposed Changes**: `26`. Node 26 ships no Corepack, so npm 11 is the
+    package manager.
+
+##### 1.3 `./package.json` and `./package-lock.json` (Create)
+
+*   **Type / Scope**: npm workspace root.
+*   **Proposed Changes**:
+    *   Workspaces: `packages/*` and `apps/*`. `"type": "module"`.
+    *   `engines.node: ">=26"`.
+    *   Scripts: `build` (`tsc -b`, then `vite build` in `apps/web`), `test`
+        (Vitest, all projects, with coverage), `lint` (ESLint plus
+        dependency-cruiser), `typecheck` (`tsc -b --noEmit` equivalent).
+    *   Dev dependencies, exact versions: typescript, vitest,
+        @vitest/coverage-v8, eslint, typescript-eslint, eslint-plugin-sonarjs,
+        dependency-cruiser, testcontainers, @testcontainers/postgresql.
+    *   The lockfile is committed.
+
+##### 1.4 `./tsconfig.base.json` and `./tsconfig.json` (Create)
+
+*   **Type / Scope**: TypeScript build configuration.
+*   **Proposed Changes**: strict mode, `module`/`moduleResolution`
+    `nodenext` (bundler for web), `target` ES2024, declaration output. The
+    root `tsconfig.json` holds only project references to the four
+    packages, for `tsc -b`.
+
+##### 1.5 `./vitest.config.ts` (Create)
+
+*   **Type / Scope**: Test runner configuration.
+*   **Proposed Changes**:
+    *   Projects: `core`, `contracts`, `api-unit`, `api-integration`
+        (Testcontainers; 120 s timeout; runs serially), and `web` (Node
+        environment, testing only the pure modules).
+    *   Coverage: v8 provider, lcov output in `coverage/lcov.info`.
+    *   Excluded from coverage: `apps/web/src/render/**`,
+        `apps/web/src/main.ts`, `apps/api/src/main.ts`. These are wiring or
+        WebGL-only code, and the reasons are repeated in
+        `sonar-project.properties`.
+
+##### 1.6 `./eslint.config.js` (Create)
+
+*   **Type / Scope**: Lint rules.
+*   **Proposed Changes**: Flat config with typescript-eslint
+    `recommendedTypeChecked` and `eslint-plugin-sonarjs` recommended rules.
+    These catch most SonarCloud issues before analysis. The config ignores
+    `dist/`, `coverage/` and `fixtures/`.
+
+##### 1.7 `./.dependency-cruiser.cjs` (Create)
+
+*   **Type / Scope**: Architecture test (G9).
+*   **Proposed Changes**: Rules, each failing `make lint` and `make test`:
+    *   `packages/core` may not import outside itself (no `node:*`,
+        fastify, pg, @duckdb, three, zod);
+    *   `packages/contracts` may import only zod;
+    *   `apps/web` may import only `contracts`, three and earcut;
+    *   `apps/api` may not import `apps/web`;
+    *   no circular imports.
+
+##### 1.8 `./Makefile` (Create)
+
+*   **Type / Scope**: Developer and operator commands (D10).
+*   **Proposed Changes**: Targets, each listed with a one-line help by
+    `make help`:
+    *   `setup` (`npm ci`);
+    *   `dev` (PostGIS in Docker, the API in watch mode, and Vite with an
+        `/api` proxy);
+    *   `test` (`npm run lint` then `npm test`; offline apart from the
+        locally cached PostGIS image);
+    *   `lint`, `typecheck`, `build`;
+    *   `images` (`docker build -t geotoon-app:$(GIT_SHA)`);
+    *   `kind-up`, `kind-load`, `deploy`
+        (`helm upgrade --install geotoon deploy/helm/geotoon --set
+        image.tag=$(GIT_SHA) --wait --timeout 5m`);
+    *   `open` (port-forward to 8080), `verify-cache`, `sonar`, `kind-down`.
+
+##### 1.9 `./.env.example` (Create)
+
+*   **Type / Scope**: Documentation of local configuration.
+*   **Proposed Changes**: Every variable read by `apps/api/src/config.ts`
+    (see 4.2), with safe local defaults and no secrets.
+
+##### 1.10 `./.dockerignore` (Create)
+
+*   **Type / Scope**: Docker build context.
+*   **Proposed Changes**: Excludes `node_modules`, `dist`, `coverage`,
+    `.git`, `.scannerwork`, `fixtures` and `.env*` from the build context.
+
+#### 2. `packages/core` (domain and application; no I/O)
+
+##### 2.1 `packages/core/package.json`, `packages/core/tsconfig.json` (Create)
+
+*   **Type / Scope**: Package manifest.
+*   **Proposed Changes**: Name `@geotoon/core`, ESM, no runtime
+    dependencies.
+
+##### 2.2 `packages/core/src/index.ts` (Create)
+
+*   **Type / Scope**: Public API of the package.
+*   **Proposed Changes**: Re-exports the value objects, use cases and port
+    interfaces listed below; nothing else.
+
+##### 2.3 `packages/core/src/shared/geo-point.ts` (Create)
+
+*   **Type / Scope**: Value object.
+*   **Proposed Changes**:
+    *   `GeoPoint.of(lat, lon)` validates the ranges and finite numbers;
+        otherwise it throws `DomainError('INVALID_COORDINATES')`.
+    *   `distanceMeters(a, b)` uses the haversine formula with mean earth
+        radius 6,371,008.8 m.
+    *   `toLocalMeters(origin, p)` and `fromLocalMeters` are equirectangular
+        helpers.
+
+##### 2.4 `packages/core/src/shared/domain-error.ts` (Create)
+
+*   **Type / Scope**: Error type.
+*   **Proposed Changes**: `DomainError(code, message, {retryable,
+    retryAfterSeconds})`. The codes are a union type matching the contract's
+    error codes.
+
+##### 2.5 `packages/core/src/shared/ports.ts` (Create)
+
+*   **Type / Scope**: Cross-cutting ports.
+*   **Proposed Changes**:
+    *   `Clock { now(): Date }`;
+    *   `Logger { info, warn, error }`, each taking a message and a fields
+        object.
+
+##### 2.6 `packages/core/src/geocoding/` (Create): `address-suggestion.ts`, `geocoder-port.ts`, `suggest-addresses.ts`
+
+*   **Type / Scope**: Geocoding bounded context.
+*   **Proposed Changes**:
+    *   `AddressSuggestion {id, label, point: GeoPoint, kind: 'house' |
+        'street' | 'place' | 'other'}`.
+    *   `Geocoder.search(query, {bias?: GeoPoint, limit})`.
+    *   `SuggestAddresses.execute(query, bias?)`:
+        *   trims the query;
+        *   rejects fewer than 3 or more than 200 characters
+            (`INVALID_QUERY`);
+        *   limits results to 5;
+        *   caches results for 10 minutes in an injected Map-based cache,
+            with at most 1,000 entries and least-recently-used eviction.
+
+##### 2.7 `packages/core/src/cartography/domain/tile-key.ts` and `tile-grid.ts` (Create)
+
+*   **Type / Scope**: Domain service.
+*   **Proposed Changes**:
+    *   `TILE_ZOOM = 16` is a constant.
+    *   `TileKey {x, y}`.
+    *   `tileOf(point)`, `boundsOf(tile)` (south, west, north, east).
+    *   `tilesCovering(centre, radiusM)` lists the tiles whose bounds come
+        within the radius. It uses the distance from the centre to the
+        nearest point of the tile's bounds, measured in local metres.
+    *   `bboxOf(tiles)` returns the union bounds.
+
+##### 2.8 `packages/core/src/cartography/domain/tile-coverage.ts` (Create)
+
+*   **Type / Scope**: Entity rules.
+*   **Proposed Changes**:
+    *   `TileState = 'missing' | 'fetching' | 'complete' | 'failed'`.
+    *   `TileCoverage {tile, state, leaseExpiresAt?, attempts, errorClass?,
+        retryAfter?, release?, featureCount?, fetchedAt?,
+        fetchRequestId?}`.
+    *   Pure functions:
+        *   `isClaimable(c, now)`;
+        *   `retryDelaySeconds(attempts) = min(10 × 2^attempts, 600)`;
+        *   `areaStatus(coverages, now)`, which returns `ready` (all
+            complete), `failed` (any failed with a future retry-after) or
+            `pending`.
+    *   `LEASE_SECONDS = 180`.
+
+##### 2.9 `packages/core/src/cartography/domain/features.ts` (Create)
+
+*   **Type / Scope**: Domain types.
+*   **Proposed Changes**:
+    *   **Geometry types:** `Polygon` and `MultiPolygon` as nested
+        `[lon, lat][]` arrays.
+    *   **`BuildingRecord`:** `{id, footprint, sourceHeightM?, numFloors?,
+        minHeightM?, kind, sourceDataset}`.
+    *   **`MapLine`:** `{id, kind, name?, coords}`, where kind is one of
+        `motorway`, `trunk`, `primary`, `secondary`, `tertiary`,
+        `residential`, `service`, `unclassified`, `footway`, `path`,
+        `cycleway`, `steps`, `rail`, `stream`, `river` or `other`.
+    *   **`MapArea`:** `{id, kind, polygon}`, where kind is one of `park`,
+        `grass`, `pitch`, `water`, `forest`, `residential`, `industrial`,
+        `commercial`, `education` or `other`.
+    *   **`TreeFeature`:** `{id, geometry: point | line}`.
+    *   **`FeatureBatch`:** `{buildings, lines, areas, trees, release}`.
+    *   **`LINE_WIDTH_M`:**
+
+        | Kind | Width |
+        | --- | --- |
+        | motorway | 14 |
+        | trunk | 12 |
+        | primary | 10 |
+        | secondary | 9 |
+        | tertiary | 8 |
+        | residential, unclassified | 6 |
+        | service | 4 |
+        | footway, path, cycleway, steps | 2 |
+        | rail | 3 |
+        | stream | 3 |
+        | river | 8 |
+        | other | 5 |
+
+##### 2.10 `packages/core/src/cartography/domain/height-rule.ts` and `fnv1a.ts` (Create)
+
+*   **Type / Scope**: Domain rule (M2).
+*   **Proposed Changes**:
+    *   `HEIGHT_RULE_VERSION = 1`.
+    *   `fnv1a32(text)` is an FNV-1a 32-bit hash over UTF-8 bytes.
+    *   `estimateHeight(b)` returns `{heightM, minHeightM, source}`:
+        1.  `sourceHeightM > 0`: measured.
+        2.  Else `numFloors > 0`: `numFloors × 3.0`, source floors.
+        3.  Else estimated from the footprint area in m², computed with
+            local metres. Below 40 m²: 3–6 m. Up to 150: 3–9 m. Up to 600:
+            6–15 m. Larger: 8–12 m. Within each band the height is
+            `min + (fnv1a32(id) mod 1000)/1000 × (max − min)`, rounded to
+            0.1 m.
+
+##### 2.11 `packages/core/src/cartography/domain/spawn-point.ts` (Create)
+
+*   **Type / Scope**: Domain rule (M14).
+*   **Proposed Changes**: `chooseSpawn(address, lines, buildings)` returns
+    `{point, headingDeg}`:
+    1.  Find the nearest point on any line of a walkable kind (everything
+        except rail and water) within 150 m.
+    2.  If there is none, take the point 2 m outside the nearest footprint
+        edge.
+    3.  If there is still none, use the address point itself.
+
+    The heading is the bearing from the spawn point to the address. Uses
+    local metres.
+
+##### 2.12 `packages/core/src/cartography/application/ports.ts` (Create)
+
+*   **Type / Scope**: Port interfaces.
+*   **Proposed Changes**:
+    *   `MapDataSource.fetch(bbox, {signal})` returns a `FeatureBatch`.
+    *   `TileCoverageRepository`:
+        *   `get(tiles)`;
+        *   `claim(tiles, owner, leaseSeconds)`, returning the claimed
+            subset;
+        *   `markFailed(tiles, owner, errorClass, retryAfter)`;
+        *   `releaseOwner(owner)`.
+    *   `FeatureStore.storeAndComplete(batch, tiles, owner, requestId)` runs
+        in one transaction. It returns the tiles it completed.
+    *   `FeatureReader.readWithin(centre, radiusM)` returns the stored
+        buildings, lines, areas and trees.
+    *   `IngestionScheduler.schedule(job)`.
+
+##### 2.13 `packages/core/src/cartography/application/request-area.ts` (Create)
+
+*   **Type / Scope**: Use case.
+*   **Proposed Changes**: `RequestArea.execute(point, requestId)` follows
+    steps 1 to 5 in the Technical Plan. It returns `{status, tiles,
+    sourceCalls, scene?}`. `sourceCalls` is 1 if this request scheduled a
+    fetch, else 0.
+
+##### 2.14 `packages/core/src/cartography/application/ingest-tiles.ts` (Create)
+
+*   **Type / Scope**: Use case.
+*   **Proposed Changes**: `IngestTiles.run({tiles, owner, requestId})`:
+    1.  Fetch the bounding box of the tiles, with a 120 s abort signal.
+    2.  Call `storeAndComplete`.
+    3.  On error, classify it (`timeout`, `network`, `release_not_found`,
+        `parse_error` or `unknown`) and call `markFailed` with
+        `retryDelaySeconds`.
+    4.  Log one line with the tiles, the feature counts and the duration.
+
+##### 2.15 `packages/core/src/cartography/application/read-scene.ts` (Create)
+
+*   **Type / Scope**: Use case.
+*   **Proposed Changes**:
+    *   `ReadScene.execute(centre, radiusM)` calls the reader, applies
+        `estimateHeight` to every building and `chooseSpawn`, and samples
+        tree lines every 6 m.
+    *   It builds the attribution list from the distinct source datasets:
+        *   always "© OpenStreetMap contributors" (ODbL) and "Overture Maps
+            Foundation";
+        *   plus "Google Open Buildings" and "Microsoft ML Buildings" when
+            present.
+    *   It returns a `Scene` domain object.
+
+##### 2.16 `packages/core/src/cartography/application/counting-map-data-source.ts` (Create)
+
+*   **Type / Scope**: Decorator (B6).
+*   **Proposed Changes**: Wraps any `MapDataSource` and counts calls,
+    exposing `count()`. The composition root uses it, and so does the
+    integration test.
+
+##### 2.17 `packages/core/test/*.spec.ts` (Create)
+
+*   **Type / Scope**: Unit tests.
+*   **Proposed Changes**:
+    *   **`geo-point`:** range validation and known distances.
+    *   **`tile-grid`:** known tile for the PoC point (x 24257, y 37180 at
+        zoom 16); 16 or fewer tiles for 1 km; corners excluded.
+    *   **`tile-coverage`:** each transition, the backoff caps, and
+        `areaStatus`.
+    *   **`height-rule`:** measured, floors and estimated paths; outputs
+        pinned for 3 real GERS ids; bounds per band.
+    *   **`spawn-point`:** a point inside a footprint moves to the street;
+        the no-street fallback; the heading.
+    *   **`suggest-addresses`:** validation, limit and cache.
+    *   **`request-area`:** in-memory fakes:
+        *   ready path;
+        *   pending path, which schedules exactly once;
+        *   failed path, with retry-after;
+        *   two concurrent calls, which schedule one fetch.
+    *   **`ingest-tiles`:** success; failure classification;
+        lease-lost tiles are not marked complete.
+    *   **`read-scene`:** heights, attribution and tree sampling.
+
+#### 3. `packages/contracts` (wire schemas)
+
+##### 3.1 `packages/contracts/package.json`, `packages/contracts/tsconfig.json` (Create)
+
+*   **Type / Scope**: Package manifest.
+*   **Proposed Changes**: Name `@geotoon/contracts`, ESM, with zod as the
+    only dependency (exact pin).
+
+##### 3.2 `packages/contracts/src/` (Create): `index.ts`, `version.ts`, `geocode.ts`, `areas.ts`, `problem.ts`
+
+*   **Type / Scope**: Shared schemas.
+*   **Proposed Changes**:
+    *   `CONTRACT_VERSION = 1`.
+    *   Zod schemas and inferred types:
+        *   `GeocodeQuery`, `GeocodeResponse`;
+        *   `AreaRequestBody {lat, lon}`;
+        *   `AreaPending`, `AreaReady`, `Scene`, `SceneBuilding`, `SceneLine`,
+            `SceneArea`, `Spawn`, `Attribution`, `TileStatus`;
+        *   `Problem`, with an `ErrorCode` enum holding the codes listed in
+            the Technical Plan.
+    *   Coordinates are `[lon, lat]` tuples rounded to 6 decimals.
+
+##### 3.3 `packages/contracts/test/areas.spec.ts` (Create)
+
+*   **Type / Scope**: Unit tests.
+*   **Proposed Changes**: Valid and invalid examples parse or fail as
+    expected; the version is present.
+
+#### 4. `apps/api` (Fastify server and adapters)
+
+##### 4.1 `apps/api/package.json`, `apps/api/tsconfig.json` (Create)
+
+*   **Type / Scope**: Package manifest.
+*   **Proposed Changes**: Name `@geotoon/api`. Dependencies, exact pins:
+    `@geotoon/core`, `@geotoon/contracts`, fastify, @fastify/static,
+    @fastify/compress, @fastify/rate-limit, pg, @duckdb/node-api, zod.
+    Scripts: `build`, `start`, `dev`.
+
+##### 4.2 `apps/api/src/config.ts` (Create)
+
+*   **Type / Scope**: Configuration.
+*   **Proposed Changes**: A zod-validated environment, read once:
+    *   **Server:** `PORT` (8080), `STATIC_DIR`.
+    *   **Database:** `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`,
+        `DATABASE_USER`, `DATABASE_PASSWORD`.
+    *   **Overture:** `OVERTURE_BASE_URL`
+        (`s3://overturemaps-us-west-2/release`), `OVERTURE_RELEASE`
+        (`2026-10-21.0`), `OVERTURE_QUERY_TIMEOUT_S` (120).
+    *   **Area:** `AREA_RADIUS_M` (2000), `AREA_RADIUS_MAX_M` (2000).
+    *   **Photon:** `PHOTON_URL` (`https://photon.komoot.io`),
+        `PHOTON_TIMEOUT_MS` (4000).
+    *   **Outbound identity:** `USER_AGENT`
+        (`geotoon/<version> (+https://github.com/marcelomiyake/geotoon)`).
+    *   **DuckDB:** `DUCKDB_MEMORY_LIMIT` (`1GB`), `DUCKDB_THREADS` (4),
+        `DUCKDB_EXTENSION_DIR`, `DUCKDB_TEMP_DIR` (`/tmp/duckdb`).
+    *   **Limits:** `RATE_LIMIT_AREAS_PER_MIN` (30),
+        `RATE_LIMIT_GEOCODE_PER_MIN` (60).
+
+    Startup fails with one message listing every invalid variable.
+
+##### 4.3 `apps/api/src/main.ts` (Create)
+
+*   **Type / Scope**: Process entry point.
+*   **Proposed Changes**:
+    1.  Load the configuration.
+    2.  Connect to PostgreSQL, retrying for up to 60 s.
+    3.  Run the migrator.
+    4.  Open DuckDB and load `httpfs`.
+    5.  Build the app through the composition root and listen.
+    6.  Log one startup line: git SHA, release, radius, zoom, stored tile
+        count.
+
+    On SIGTERM: stop accepting requests, call
+    `TileCoverageRepository.releaseOwner(owner)`, close the pools and exit.
+
+##### 4.4 `apps/api/src/composition-root.ts` (Create)
+
+*   **Type / Scope**: Wiring.
+*   **Proposed Changes**: Builds the adapters and use cases by hand and
+    returns `{app, close}`. The owner ID is `hostname:pid:uuid`.
+
+##### 4.5 `apps/api/src/http/server.ts` (Create)
+
+*   **Type / Scope**: Fastify setup.
+*   **Proposed Changes**:
+    *   Request IDs from `crypto.randomUUID`, echoed in `x-request-id`.
+    *   @fastify/compress (gzip and brotli).
+    *   @fastify/rate-limit, with a limit per route.
+    *   @fastify/static serving `STATIC_DIR`:
+        *   hashed assets with long-lived caching;
+        *   `index.html` with `no-cache`;
+        *   SPA fallback to `index.html`.
+    *   A `Server-Timing` hook.
+    *   An error handler that maps `DomainError` and zod errors to
+        `application/problem+json` via `problem.ts`. Unknown errors become
+        `INTERNAL` with no internal details.
+
+##### 4.6 `apps/api/src/http/problem.ts` (Create)
+
+*   **Type / Scope**: Error mapping.
+*   **Proposed Changes**: A table from error code to HTTP status:
+    *   400: `INVALID_COORDINATES`, `INVALID_QUERY`;
+    *   429: `RATE_LIMITED`, `GEOCODER_RATE_LIMITED`;
+    *   502: `AREA_FETCH_FAILED`, `OVERTURE_RELEASE_NOT_FOUND`;
+    *   503: `GEOCODER_UNAVAILABLE`, `OVERTURE_UNAVAILABLE`;
+    *   500: `INTERNAL`.
+
+    It also builds the problem body.
+
+##### 4.7 `apps/api/src/http/routes/geocode.ts`, `areas.ts`, `ops.ts` (Create)
+
+*   **Type / Scope**: HTTP routes.
+*   **Proposed Changes**:
+    *   **`GET /api/v1/geocode`:** validates against the contract and calls
+        `SuggestAddresses`.
+    *   **`POST /api/v1/areas`:** validates, then calls `RequestArea`.
+        Returns 202 or 200 with `Cache-Control: no-store`, and logs one line
+        with the status, tile counts, source calls and duration.
+    *   **`GET /healthz`:** liveness.
+    *   **`GET /readyz`:** checks `SELECT postgis_version()`, that the
+        schema version equals the expected one, and that DuckDB is loaded.
+        It never checks Photon or S3.
+    *   **`GET /version`.**
+
+##### 4.8 `apps/api/src/adapters/postgres/pool.ts`, `migrator.ts` (Create)
+
+*   **Type / Scope**: Database infrastructure.
+*   **Proposed Changes**:
+    *   `pg.Pool` with a maximum of 10 connections and statement timeouts.
+    *   The migrator:
+        1.  takes `pg_advisory_lock(hashtext('geotoon-migrations'))`;
+        2.  creates `schema_migrations(version int primary key,
+            applied_at)` if missing;
+        3.  applies the missing `migrations/NNNN_*.sql` files in order, one
+            transaction each;
+        4.  refuses to start if the database is behind the files' highest
+            version after this, and warns if the database is ahead.
+
+##### 4.9 `apps/api/migrations/0001_init.sql` (Create)
+
+*   **Type / Scope**: Database schema.
+*   **Proposed Changes**:
+    *   `CREATE EXTENSION IF NOT EXISTS postgis`.
+    *   The `map_feature` table from the Technical Plan, with its GiST
+        index.
+    *   `tile_coverage`: `z smallint`, `x int`, `y int`, `state text` CHECK
+        in the four states, `lease_owner text`, `lease_expires_at
+        timestamptz`, `attempts int NOT NULL DEFAULT 0`, `error_class text`,
+        `retry_after timestamptz`, `overture_release text`, `feature_count
+        int`, `fetched_at timestamptz`, `fetch_request_id text`,
+        `ingest_version int`, PRIMARY KEY (z, x, y).
+
+##### 4.10 `apps/api/src/adapters/postgres/tile-coverage-repository.ts` (Create)
+
+*   **Type / Scope**: Repository adapter.
+*   **Proposed Changes**:
+    *   `get`, `claim` (the SQL statement in the Technical Plan),
+        `markFailed` and `releaseOwner`.
+    *   Every update also checks `lease_owner = $owner AND state =
+        'fetching'`.
+
+##### 4.11 `apps/api/src/adapters/postgres/feature-store.ts` (Create)
+
+*   **Type / Scope**: Write adapter.
+*   **Proposed Changes**: `storeAndComplete` in one transaction:
+    1.  For each layer, upsert in batches of 1,000 rows. Columns are passed
+        as arrays and expanded with `unnest`, and each geometry is built
+        with `ST_MakeValid(ST_GeomFromWKB(wkb, 4326))`. Upserts use `ON
+        CONFLICT (id) DO UPDATE`.
+    2.  Mark the claimed tiles `complete`, with release, count, time and
+        request ID, but only where this owner still holds the lease.
+
+    Returns the tiles it completed.
+
+##### 4.12 `apps/api/src/adapters/postgres/feature-reader.ts` (Create)
+
+*   **Type / Scope**: Read adapter.
+*   **Proposed Changes**: One query per layer:
+    *   filter: `geom && ST_MakeEnvelope(bbox of circle, 4326) AND
+        ST_DWithin(geom::geography, ST_MakePoint(lon, lat)::geography,
+        radius)`;
+    *   output: `ST_AsGeoJSON(geom, 6)`, parsed into domain types.
+
+##### 4.13 `apps/api/src/adapters/overture/duckdb-client.ts` (Create)
+
+*   **Type / Scope**: Infrastructure.
+*   **Proposed Changes**:
+    *   One `DuckDBInstance`, in memory, with settings `memory_limit`,
+        `threads`, `temp_directory`, `extension_directory`,
+        `autoinstall_known_extensions=false`, `autoload_known_extensions=false`
+        and `s3_region='us-west-2'`.
+    *   `LOAD httpfs` at startup; failure stops startup.
+    *   `query(sql, params, signal)` runs on a fresh connection. On abort it
+        calls `connection.interrupt()`.
+
+##### 4.14 `apps/api/src/adapters/overture/overture-map-data-source.ts` and `overture-mapping.ts` (Create)
+
+*   **Type / Scope**: `MapDataSource` adapter (D1).
+*   **Proposed Changes**:
+    *   **Five queries**, run in parallel, filtered on `bbox.xmin < E AND
+        bbox.xmax > W AND bbox.ymin < N AND bbox.ymax > S`:
+        *   `buildings/building`;
+        *   `transportation/segment`;
+        *   `base/land_use`;
+        *   `base/water`;
+        *   `base/land`, filtered to tree, forest and grass classes.
+    *   **Path:** `${OVERTURE_BASE_URL}/${release}/theme=…/type=…/*`, passed
+        to `read_parquet(..., hive_partitioning=1)`.
+    *   **Mapping:** `overture-mapping.ts` holds the tables from Overture
+        `subtype`/`class` to domain kinds:
+        *   **Lines:** transportation road classes map to the line kinds of
+            the same name, rail maps to `rail`, and water lines map to
+            `stream` or `river`.
+        *   **Areas:**
+            *   land_use: `park` and `recreation` map to `park`, except a
+                pitch, which maps to `pitch`;
+            *   land_use: managed `grass` maps to `grass`;
+            *   land_use: `developed` industrial, commercial and retail map
+                to `industrial` or `commercial`;
+            *   land_use: education maps to `education`;
+            *   water polygons map to `water`;
+            *   land: forest and wood map to `forest`.
+        *   Anything else maps to `other`.
+    *   **Errors:** "No files found" maps to `release_not_found`; abort maps
+        to `timeout`; HTTP and IO errors map to `network`.
+    *   Geometry stays as WKB bytes until PostGIS.
+
+##### 4.15 `apps/api/src/adapters/photon/photon-geocoder.ts` (Create)
+
+*   **Type / Scope**: `Geocoder` adapter.
+*   **Proposed Changes**:
+    *   `GET ${PHOTON_URL}/api/?q=&limit=5&lang=default&lat=&lon=`, using
+        global `fetch` with `AbortSignal.timeout` and the `USER_AGENT`
+        header.
+    *   It maps features to `AddressSuggestion`. The label is built from
+        name, street and house number, district, city, state and country,
+        without repeats.
+    *   Errors: 429 maps to `GEOCODER_RATE_LIMITED`; timeout, network and
+        5xx map to `GEOCODER_UNAVAILABLE`.
+
+##### 4.16 `apps/api/src/adapters/ingestion/in-process-scheduler.ts` (Create)
+
+*   **Type / Scope**: `IngestionScheduler` adapter (PD1 = A).
+*   **Proposed Changes**:
+    *   A FIFO queue that runs one `IngestTiles` job at a time, detached
+        from the HTTP request.
+    *   `drain()` waits for the job in progress, for shutdown and tests.
+
+##### 4.17 `apps/api/scripts/record-overture-fixture.ts` (Create)
+
+*   **Type / Scope**: Developer script (not shipped).
+*   **Proposed Changes**:
+    *   Copies the PoC centre tile and its 8 neighbours from the pinned
+        release into
+        `fixtures/overture/<release>/theme=…/type=…/part-0.parquet`, using
+        DuckDB `COPY … TO … (FORMAT parquet)` and only the columns the
+        adapter reads.
+    *   Run once with network access; its output is committed.
+
+##### 4.18 `apps/api/test/unit/*.spec.ts` (Create)
+
+*   **Type / Scope**: Unit and adapter tests (offline).
+*   **Proposed Changes**:
+    *   **`config`:** defaults, and invalid values listed together.
+    *   **`problem`:** every code maps to its status.
+    *   **Routes,** through `fastify.inject` with fake use cases:
+        *   200, 202 and problem responses;
+        *   the `no-store` and `x-request-id` headers;
+        *   rate-limit responses.
+    *   **`photon-geocoder`:** an undici `MockAgent` replays
+        `fixtures/photon/av-bolonha-200.json`; also 429, timeout and 500.
+    *   **`overture-map-data-source`:** reads the local fixture through
+        `OVERTURE_BASE_URL=fixtures/overture`. It checks:
+        *   counts per layer;
+        *   kind mapping;
+        *   that a missing release gives `release_not_found`;
+        *   that an aborted query gives `timeout`.
+    *   **`in-process-scheduler`:** jobs run one at a time.
+
+##### 4.19 `apps/api/test/integration/*.spec.ts` (Create)
+
+*   **Type / Scope**: Integration tests (Testcontainers `postgis/postgis:17-3.6`).
+*   **Proposed Changes**:
+    *   **`migrator`:** applies to an empty database, is idempotent, two
+        concurrent runs serialise, and the version guard works.
+    *   **`tile-coverage-repository`:**
+        *   claims race between two owners;
+        *   expired leases are re-claimed;
+        *   failed tiles wait for their retry-after;
+        *   a stale owner cannot complete or fail tiles.
+    *   **`feature-store` and `feature-reader`:**
+        *   upsert is idempotent;
+        *   features crossing a tile edge are stored once;
+        *   the radius filter is exact;
+        *   invalid geometry is repaired.
+    *   **G2 proof:** the full `RequestArea` flow, with the Overture fixture
+        source wrapped in `CountingMapDataSource`:
+        *   first request: pending, then ready, with a count of 1;
+        *   second request: ready immediately, count still 1, every tile
+            complete;
+        *   the source is then replaced by one that throws if called, and a
+            third request still succeeds;
+        *   two concurrent first requests give a count of 1.
+
+#### 5. `apps/web` (browser client)
+
+##### 5.1 `apps/web/package.json`, `apps/web/tsconfig.json`, `apps/web/vite.config.ts`, `apps/web/index.html` (Create)
+
+*   **Type / Scope**: Client package and build.
+*   **Proposed Changes**:
+    *   Dependencies, exact pins: `@geotoon/contracts`, three, earcut. Dev
+        dependencies: vite, @types/three.
+    *   Vite builds into `apps/web/dist` with hashed asset names, and the
+        dev server proxies `/api` to `localhost:8080`.
+    *   `index.html` holds the search panel, the canvas container and the
+        overlays.
+
+##### 5.2 `apps/web/src/main.ts` (Create)
+
+*   **Type / Scope**: Client entry (excluded from coverage).
+*   **Proposed Changes**:
+    1.  Check for WebGL2 and a touch-only device (D12), with a message for
+        each.
+    2.  Wire the search box, the loading view, the scene builder, the
+        renderer and the controls.
+    3.  Handle `?lat=&lon=` and `?debug=1`.
+
+##### 5.3 `apps/web/src/api/client.ts` (Create)
+
+*   **Type / Scope**: HTTP client.
+*   **Proposed Changes**:
+    *   `suggest(query, signal)`, and `loadArea(lat, lon, onProgress,
+        signal)`, which polls `POST /areas` every `pollAfterMs` until it
+        gets `ready`, a problem response, or an abort.
+    *   Responses are validated with the contract schemas.
+    *   Problems are thrown as `ApiProblem` with the code and request ID.
+
+##### 5.4 `apps/web/src/ui/search-box.ts`, `loading-view.ts`, `overlays.ts`, `styles.css` (Create)
+
+*   **Type / Scope**: DOM user interface.
+*   **Proposed Changes**:
+    *   **Search box** (ARIA combobox):
+        *   300 ms debounce, at least 3 characters, AbortController per
+            keystroke;
+        *   arrow keys, Enter and Esc;
+        *   a pasted "lat, lon" is accepted;
+        *   "Search by Photon" credit.
+    *   **Loading view:** elapsed seconds, tiles complete out of total.
+    *   **Overlays:**
+        *   "Click to walk";
+        *   a pause screen with Resume, New address, Controls and
+            Attribution;
+        *   the edge-of-area message;
+        *   error messages per code, with the request ID and Retry;
+        *   corner attribution;
+        *   the debug panel.
+    *   The debounce and parsing logic is pure, so it can be tested.
+
+##### 5.5 `apps/web/src/scene/` (Create): `projection.ts`, `palette.ts`, `extrude.ts`, `ribbons.ts`, `ground.ts`, `trees.ts`, `collision.ts`, `scene-builder.ts`
+
+*   **Type / Scope**: Pure scene construction (no WebGL).
+*   **Proposed Changes**:
+    *   **`projection`:** lon/lat to local x/z metres around the centre,
+        computed in float64.
+    *   **`palette`:** a deterministic colour per building from a fixed
+        palette of 8 warm toon colours, indexed by FNV-1a of the id;
+        colours per area kind and line kind.
+    *   **`extrude`:** walls as one quad per ring edge with outward normals;
+        roofs triangulated with earcut, holes supported. Output is
+        position, normal and colour arrays.
+    *   **`ribbons`:** each line becomes a strip of `widthM` with mitred
+        joins. Miters are limited to 2× the width.
+    *   **`ground`:** area polygons triangulated with earcut at fixed
+        heights per kind, plus one ground disc of radius + 50 m.
+    *   **`trees`:** an instance transform per tree point. Size varies by id
+        hash.
+    *   **`collision`:** footprint edges in a 20 m uniform grid.
+        `resolve(from, to, radius 0.3)` returns the corrected position,
+        sliding along walls.
+    *   **`scene-builder`:** `buildScene(contractScene)` returns typed
+        arrays per material, the collision index and stats (triangles,
+        build ms).
+
+##### 5.6 `apps/web/src/render/renderer.ts`, `controls.ts` (Create)
+
+*   **Type / Scope**: WebGL and input (excluded from coverage; tested by the
+    smoke check in §9).
+*   **Proposed Changes**:
+    *   **`renderer.ts`:**
+        *   `WebGLRenderer` with antialiasing.
+        *   `MeshToonMaterial` with vertex colours and a 3-step gradient
+            `DataTexture` (`NearestFilter`).
+        *   `OutlineEffect` with thickness 0.004 and black outlines.
+        *   A `DirectionalLight` from the north-west at 45°, and a
+            `HemisphereLight`.
+        *   Fog from 150 m to 600 m, and a sky colour background.
+        *   An `InstancedMesh` for trees (cone plus cylinder).
+        *   An address marker sprite.
+        *   Handling of `webglcontextlost`.
+    *   **`controls.ts`:**
+        *   `PointerLockControls`, with movement keys read by
+            `KeyboardEvent.code` (WASD and the arrow keys).
+        *   Shift to run (1.4 and 4 m/s), Q and E to turn at 90°/s.
+        *   Movement is ignored while an input has focus.
+        *   Each frame, the move goes through `collision.resolve` and the
+            radius clamp (2 m inside the radius), and the eye height is
+            fixed at 1.7 m.
+
+##### 5.7 `apps/web/test/*.spec.ts` (Create)
+
+*   **Type / Scope**: Unit tests (Node).
+*   **Proposed Changes**:
+    *   **`projection`:** known offsets; error under 1 m at 2 km.
+    *   **`extrude`:** a square gives 8 wall and 2 roof triangles, plus
+        normals; holes; clockwise and anticlockwise input.
+    *   **`ribbons`:** width; miter limit.
+    *   **`ground`:** layer heights.
+    *   **`collision`:** blocks a wall, slides along it, empty cells.
+    *   **`scene-builder`:** built from a recorded PoC scene payload
+        (`fixtures/scene/poc-scene.json`, generated by the integration test
+        helper). It checks counts per layer and that every building yields
+        triangles. Build time is measured under G7, not asserted in a unit
+        test, because a time limit inside `make test` would fail randomly.
+    *   **`client`:** polling stops at ready, and a problem response throws.
+    *   **`search-box` logic:** debounce, "lat, lon" parsing.
+
+#### 6. Fixtures
+
+##### 6.1 `fixtures/overture/2026-10-21.0/theme=*/type=*/part-0.parquet` (Create)
+
+*   **Type / Scope**: Recorded test data (five files).
+*   **Proposed Changes**: Output of the script in 4.17; about 3 × 3 tiles
+    around the PoC point. Used only by tests.
+
+##### 6.2 `fixtures/photon/av-bolonha-200.json`, `fixtures/scene/poc-scene.json` (Create)
+
+*   **Type / Scope**: Recorded test data.
+*   **Proposed Changes**: One Photon response for "Av. Bolonha 200
+    Jaguaré", and one scene payload built from the Overture fixture.
+
+##### 6.3 `fixtures/NOTICE` (Create)
+
+*   **Type / Scope**: Licence notice.
+*   **Proposed Changes**: States that the fixtures contain data © OpenStreetMap
+    contributors (ODbL 1.0), distributed by Overture Maps Foundation, plus
+    Google Open Buildings and Microsoft ML Buildings where present, and that
+    the repository's MIT licence does not apply to them.
+
+#### 7. Image, chart and Kind
+
+##### 7.1 `docker/app.Dockerfile` (Create)
+
+*   **Type / Scope**: Container image.
+*   **Proposed Changes**:
+    *   **Stage `build`** (`node:26-bookworm-slim`): `npm ci`, then
+        `npm run build`, then prune dev dependencies.
+    *   **Stage `duckdb-ext`:** a short Node script, using the same
+        `@duckdb/node-api` version, runs `INSTALL httpfs` into
+        `/opt/duckdb/extensions`.
+    *   **Stage `runtime`** (`node:26-bookworm-slim`):
+        *   copies the API `dist`, production `node_modules`, `migrations`,
+            the web `dist` (to `/app/public`) and the extensions;
+        *   creates user 10001;
+        *   `USER 10001`, `EXPOSE 8080`, a `HEALTHCHECK`-free image (probes
+            live in the chart);
+        *   `CMD ["node", "apps/api/dist/main.js"]`;
+        *   `GIT_SHA` build argument, exposed as an environment variable.
+    *   Base images are pinned by digest.
+
+##### 7.2 `deploy/kind/kind-config.yaml` (Create)
+
+*   **Type / Scope**: Kind cluster definition.
+*   **Proposed Changes**: One control-plane node. `extraPortMappings` maps
+    host port 8080 to node port 30080, used only with `values-kind.yaml`.
+
+##### 7.3 `deploy/helm/geotoon/Chart.yaml`, `.helmignore` (Create)
+
+*   **Type / Scope**: Chart metadata.
+*   **Proposed Changes**: apiVersion v2, chart version 0.1.0, appVersion
+    from the git SHA set at install.
+
+##### 7.4 `deploy/helm/geotoon/values.yaml`, `values.schema.json`, `values-kind.yaml` (Create)
+
+*   **Type / Scope**: Chart configuration.
+*   **Proposed Changes**:
+    *   **`values.yaml`:**
+        *   `image.repository` and `image.tag`;
+        *   `area.radiusM` (2000);
+        *   `overture.release` and `overture.baseUrl`;
+        *   `photon.url`;
+        *   `duckdb.memoryLimit` and `duckdb.threads`;
+        *   `resources` for the app (2 GiB) and PostgreSQL (1 GiB);
+        *   `postgresql.image` (`postgis/postgis:17-3.6`, pinned) and
+            `postgresql.storage` (2Gi);
+        *   `service.type` (ClusterIP).
+    *   **`values.schema.json`:** requires all of the above and limits
+        `area.radiusM` to 100–2000.
+    *   **`values-kind.yaml`:** `service.type: NodePort`, `nodePort: 30080`.
+
+##### 7.5 `deploy/helm/geotoon/templates/` (Create): `_helpers.tpl`, `app-deployment.yaml`, `app-service.yaml`, `postgres-statefulset.yaml`, `postgres-service.yaml`, `postgres-secret.yaml`, `NOTES.txt`
+
+*   **Type / Scope**: Kubernetes manifests.
+*   **Proposed Changes**:
+    *   **App Deployment:**
+        *   1 replica; environment from values and the Secret;
+        *   probes: startup and readiness on `/readyz`, liveness on
+            `/healthz`;
+        *   pod and container security contexts: non-root UID 10001,
+            read-only root filesystem, `allowPrivilegeEscalation: false`,
+            drop ALL capabilities, seccomp `RuntimeDefault`;
+        *   an `emptyDir` at `/tmp`;
+        *   resource requests and limits;
+        *   `automountServiceAccountToken: false`;
+        *   `terminationGracePeriodSeconds: 30`.
+    *   **PostGIS StatefulSet:**
+        *   1 replica, UID and GID 999 with `fsGroup` 999;
+        *   `PGDATA=/var/lib/postgresql/data/pgdata`;
+        *   `pg_isready` probes;
+        *   `volumeClaimTemplates` (2Gi), with
+            `persistentVolumeClaimRetentionPolicy {whenDeleted: Delete,
+            whenScaled: Retain}`;
+        *   resource limits; `automountServiceAccountToken: false`.
+    *   **Secret:** created with a 32-character random password only when
+        `lookup` finds none, and annotated `helm.sh/resource-policy: keep`.
+    *   **`NOTES.txt`:** prints the port-forward command and the expected
+        first-load time.
+
+#### 8. SonarCloud and CI
+
+##### 8.1 `sonar-project.properties` (Create)
+
+*   **Type / Scope**: Analysis configuration (D5).
+*   **Proposed Changes**:
+    *   `sonar.organization=marcelomiyake`,
+        `sonar.projectKey=marcelomiyake_geotoon`.
+    *   Sources and tests:
+        *   `sonar.sources`: packages, apps, deploy and docker;
+        *   `sonar.tests`: the `test/` folders;
+        *   `sonar.test.inclusions`: `**/*.spec.ts`.
+    *   `sonar.javascript.lcov.reportPaths=coverage/lcov.info`.
+    *   Exclusions:
+        *   `sonar.exclusions`: `**/dist/**`, `**/coverage/**`,
+            `fixtures/**`;
+        *   `sonar.coverage.exclusions`: the WebGL and entry files from 1.5,
+            with a comment giving the reason.
+
+##### 8.2 `.github/workflows/ci.yml` (Create)
+
+*   **Type / Scope**: CI pipeline.
+*   **Proposed Changes**:
+    *   Triggers: push to `main` and pull requests.
+    *   Steps:
+        1.  Set up Node 26.
+        2.  `make setup lint typecheck test build`.
+        3.  SonarCloud scan using the `SONAR_TOKEN` repository secret.
+    *   Actions pinned by commit SHA.
+    *   The workflow file exists, but it runs only after the owner pushes
+        and adds the secret. Both are outward actions that need the owner's
+        approval.
+
+##### 8.3 SonarCloud project (external, not a file)
+
+*   **Type / Scope**: External configuration.
+*   **Proposed Changes**:
+    *   Create `marcelomiyake_geotoon` (public) with `api/projects/create`
+        using `SONAR_TOKEN`. It is not imported from GitHub, so Automatic
+        Analysis stays off.
+    *   Analysis comes from `make sonar` (local `sonar-scanner`) until CI
+        is enabled.
+
+#### 9. Documentation and verification scripts
+
+##### 9.1 `README.md` (Create)
+
+*   **Type / Scope**: Documentation (M22).
+*   **Proposed Changes**: Sections, in this order:
+    1.  What it is, with a screenshot.
+    2.  Prerequisites with versions.
+    3.  Outbound hosts needed (`overturemaps-us-west-2.s3.amazonaws.com`,
+        `photon.komoot.io`).
+    4.  Quick start: `make kind-up images kind-load deploy open`.
+    5.  The command table.
+    6.  The configuration table.
+    7.  How to confirm a read came from storage.
+    8.  Attribution and licences.
+    9.  Troubleshooting:
+        *   request IDs;
+        *   `kubectl logs`;
+        *   psql through port-forward;
+        *   three provenance queries;
+        *   forcing a refetch with `DELETE FROM tile_coverage WHERE …`.
+    10. Glossary.
+    11. The departures from the original checklist.
+
+##### 9.2 `scripts/verify-cache.sh` (Create)
+
+*   **Type / Scope**: G2 check on Kind (CUJ 2).
+*   **Proposed Changes**:
+    1.  Port-forward the app.
+    2.  `POST /api/v1/areas` at the PoC point until ready, and record the
+        first-load time and payload bytes (for G7).
+    3.  `helm upgrade --reuse-values --set
+        overture.baseUrl=s3://geotoon-unreachable-invalid/release`, then
+        restart the app and PostgreSQL pods and wait for readiness.
+    4.  POST again: it must be `ready` on the first response, with
+        `sourceCalls == 0` and every tile `complete`.
+    5.  Restore the base URL.
+
+    Exits non-zero on any failure.
+
+##### 9.3 `docs/designs/geotoon.md` (Create, at finalisation)
+
+*   **Type / Scope**: Final design document.
+*   **Proposed Changes**: The approved content of `design_draft.md`.
+
+### Verification Plan
+
+*   **Compilation/Build**: `make build` (`tsc -b` plus `vite build`);
+    `make images`.
+*   **Unit Tests**: `make test`. It runs:
+    *   ESLint and dependency-cruiser;
+    *   Vitest for core, contracts, the API (unit and integration with
+        Testcontainers) and web.
+
+    It needs no network access beyond Docker's local image cache.
+*   **Static Analysis & Linting**: `make lint`, then `make sonar`. Then
+    check through the SonarCloud API:
+    *   `api/issues/search?componentKeys=marcelomiyake_geotoon&resolved=false`:
+        total 0;
+    *   `api/hotspots/search?projectKey=marcelomiyake_geotoon&status=TO_REVIEW`:
+        total 0;
+    *   `api/qualitygates/project_status`: `OK`.
+*   **Test Coverage Requirement**: at least 80% line coverage on the
+    analysed code (SonarCloud's default gate on new code); WebGL and entry
+    files are excluded, as listed in 1.5.
+*   **E2E/Integration**:
+    *   **G3:** `make kind-down kind-up images kind-load deploy` on a fresh
+        cluster. All pods ready within 5 minutes.
+    *   **G2:** `make verify-cache` passes.
+    *   **G1 and G6:** open the app through `make open`, enter "Av. Bolonha,
+        200 - Jaguaré", wait for the scene, then:
+        1.  take a street-level screenshot showing toon bands, outlines and
+            separate buildings;
+        2.  walk into a wall and check that it blocks;
+        3.  walk to the edge and check that the message appears.
+    *   **G7:** record the first-load time, the gzip payload size, the scene
+        build time from the debug overlay, and the frame time. If any
+        target is missed at 2 km, set `area.radiusM` to 1500, then 1000,
+        and repeat.
+
+--------------------------------------------------------------------------------
+
+*Drafted with EGM*
