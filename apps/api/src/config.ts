@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { z } from 'zod';
 
 export const APP_VERSION = '0.1.0';
@@ -33,7 +35,8 @@ const EnvSchema = z
     DUCKDB_MEMORY_LIMIT: z.string().min(1).default('1GB'),
     DUCKDB_THREADS: positiveInt.default(4),
     DUCKDB_EXTENSION_DIR: z.preprocess(emptyAsUndefined, z.string().min(1).optional()),
-    DUCKDB_TEMP_DIR: z.string().min(1).default('/tmp/duckdb'),
+    // Spill files go under the OS temp directory unless set (the image sets a pod-local path).
+    DUCKDB_TEMP_DIR: z.string().min(1).default(join(tmpdir(), 'geotoon-duckdb')),
     RATE_LIMIT_AREAS_PER_MIN: positiveInt.default(30),
     RATE_LIMIT_GEOCODE_PER_MIN: positiveInt.default(60),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
@@ -104,12 +107,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       password: e.DATABASE_PASSWORD,
     },
     overture: {
-      baseUrl: e.OVERTURE_BASE_URL.replace(/\/+$/, ''),
+      baseUrl: withoutTrailingSlashes(e.OVERTURE_BASE_URL),
       release: e.OVERTURE_RELEASE,
       timeoutMs: e.OVERTURE_QUERY_TIMEOUT_S * 1000,
     },
     areaRadiusM: e.AREA_RADIUS_M,
-    photon: { url: e.PHOTON_URL.replace(/\/+$/, ''), timeoutMs: e.PHOTON_TIMEOUT_MS },
+    photon: { url: withoutTrailingSlashes(e.PHOTON_URL), timeoutMs: e.PHOTON_TIMEOUT_MS },
     userAgent: e.USER_AGENT,
     duckdb: {
       memoryLimit: e.DUCKDB_MEMORY_LIMIT,
@@ -124,4 +127,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: e.LOG_LEVEL,
     gitSha: e.GIT_SHA,
   };
+}
+
+/** Drops trailing slashes without a regular expression (no backtracking on long input). */
+function withoutTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === '/') {
+    end -= 1;
+  }
+  return url.slice(0, end);
 }

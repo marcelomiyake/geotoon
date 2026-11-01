@@ -1,0 +1,37 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_type": "W",
+        "osm_id": 499319605,
+        "osm_key": "shop",
+        "osm_value": "greengrocer",
+        "type": "house",
+        "housenumber": "200",
+        "name": "Peg Pese Hortifruti",
+        "street": "Avenida Bolonha",
+        "district": "Jaguaré",
+        "city": "São Paulo",
+        "state": "São Paulo",
+        "country": "Brasil",
+        "postcode": "05334-000",
+        "countrycode": "BR",
+        "extent": [
+          -46.7472814,
+          -23.5483074,
+          -46.7467078,
+          -23.5487321
+        ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -46.7469144,
+          -23.5485817
+        ]
+      }
+    }
+  ]
+}

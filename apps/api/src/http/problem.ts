@@ -28,7 +28,7 @@ const TITLES: Readonly<Record<ErrorCode, string>> = {
 
 export interface ProblemOptions {
   readonly retryable?: boolean;
-  readonly retryAfterSeconds?: number | undefined;
+  readonly retryAfterSeconds?: number;
   /** Overrides the status from the table (used for framework 4xx errors). */
   readonly status?: number;
 }

@@ -1,6 +1,12 @@
 import type { Suggestion } from '@geotoon/contracts';
-import { ApiProblem } from '../api/client.js';
-import { DEBOUNCE_MS, debounce, nextIndex, parseLatLon, shouldSearch } from './search-logic.js';
+import {
+  DEBOUNCE_MS,
+  debounce,
+  nextIndex,
+  parseLatLon,
+  searchErrorMessage,
+  shouldSearch,
+} from './search-logic.js';
 
 export interface PickedPlace {
   readonly lat: number;
@@ -70,11 +76,7 @@ export class SearchBox {
         return;
       }
       this.render(suggestions);
-      this.setStatus(
-        suggestions.length === 0
-          ? 'No address found. Add the city, or paste coordinates as "lat, lon".'
-          : `${suggestions.length} suggestion${suggestions.length === 1 ? '' : 's'}.`,
-      );
+      this.setStatus(suggestionStatus(suggestions.length));
     } catch (error) {
       if (controller.signal.aborted) {
         return;
@@ -157,17 +159,9 @@ export class SearchBox {
   }
 }
 
-export function searchErrorMessage(error: unknown): string {
-  if (error instanceof ApiProblem) {
-    switch (error.code) {
-      case 'GEOCODER_RATE_LIMITED':
-      case 'RATE_LIMITED':
-        return 'Too many searches. Wait a few seconds and type again.';
-      case 'GEOCODER_UNAVAILABLE':
-        return 'Address search is unavailable. You can paste coordinates as "lat, lon".';
-      default:
-        return `Search failed: ${error.message}`;
-    }
+function suggestionStatus(count: number): string {
+  if (count === 0) {
+    return 'No address found. Add the city, or paste coordinates as "lat, lon".';
   }
-  return 'Search failed. Check the connection and try again.';
+  return count === 1 ? '1 suggestion.' : `${count} suggestions.`;
 }

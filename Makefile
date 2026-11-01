@@ -58,8 +58,9 @@ open: ## Port-forward the app to http://localhost:8080
 verify-cache: ## Prove a repeated area request reads only from PostGIS (needs `make open`)
 	scripts/verify-cache.sh http://localhost:8080
 
-sonar: ## Run the SonarCloud scan (needs SONAR_TOKEN)
-	npx --yes @sonar/scan@4.3.2 -Dsonar.token=$${SONAR_TOKEN:?set SONAR_TOKEN}
+sonar: ## Run the SonarCloud scan (needs SONAR_TOKEN in the environment; run `make test` first for coverage)
+	@test -n "$${SONAR_TOKEN}" || { echo "set SONAR_TOKEN" >&2; exit 1; }
+	npx --yes @sonar/scan@4.3.2 -Dsonar.host.url=https://sonarcloud.io
 
 kind-down: ## Delete the Kind cluster
 	kind delete cluster --name $(CLUSTER)

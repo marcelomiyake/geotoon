@@ -185,15 +185,15 @@ export class SceneRenderer {
       count,
     );
     // OutlineEffect does not support instancing; trees keep toon shading without ink lines.
-    hideOutline(trunks.material as THREE.Material);
-    hideOutline(crowns.material as THREE.Material);
+    hideOutline(trunks.material);
+    hideOutline(crowns.material);
     const matrix = new THREE.Matrix4();
     const position = new THREE.Vector3();
     const rotation = new THREE.Quaternion();
     const scale = new THREE.Vector3();
     const up = new THREE.Vector3(0, 1, 0);
     for (let i = 0; i < count; i += 1) {
-      position.set(data[i * 4]!, 0, data[i * 4 + 1]!);
+      position.set(data[i * 4]!, 0, data[i * 4 + 1]);
       const s = data[i * 4 + 2]!;
       scale.set(s, s, s);
       rotation.setFromAxisAngle(up, data[i * 4 + 3]!);
@@ -225,16 +225,20 @@ export class SceneRenderer {
   private clear(): void {
     this.scene.remove(this.content);
     this.content.traverse((object) => {
-      if (object instanceof THREE.Mesh) {
-        object.geometry.dispose();
-        const materials: THREE.Material[] = Array.isArray(object.material)
-          ? object.material
-          : [object.material];
-        materials.forEach((material) => material.dispose());
+      if (!isMesh(object)) {
+        return;
       }
+      const mesh = object;
+      mesh.geometry.dispose();
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      materials.forEach((material) => material.dispose());
     });
     this.content = new THREE.Group();
   }
+}
+
+function isMesh(object: THREE.Object3D): object is THREE.Mesh {
+  return 'isMesh' in object && object.isMesh === true;
 }
 
 function hideOutline(material: THREE.Material): void {

@@ -101,7 +101,7 @@ export function toStoredFeatures(rows: readonly FeatureRow[]): StoredFeatures {
         trees.push(...treeOf(row));
     }
   }
-  return { buildings, lines, areas, trees, datasets: [...datasets].sort() };
+  return { buildings, lines, areas, trees, datasets: [...datasets].sort((a, b) => a.localeCompare(b)) };
 }
 
 function polygons(geometry: GeoJsonGeometry): MultiPolygonCoords {

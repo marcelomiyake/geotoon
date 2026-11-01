@@ -7,9 +7,9 @@ export type HeightSource = 'measured' | 'floors' | 'estimated';
 export interface HeightInput {
   readonly id: string;
   readonly footprintAreaM2: number;
-  readonly sourceHeightM?: number | undefined;
-  readonly numFloors?: number | undefined;
-  readonly minHeightM?: number | undefined;
+  readonly sourceHeightM?: number;
+  readonly numFloors?: number;
+  readonly minHeightM?: number;
 }
 
 export interface Height {

@@ -5,7 +5,7 @@ export interface DuckDbConfig {
   readonly threads: number;
   readonly tempDirectory: string;
   /** Where `httpfs` is installed; the image bakes it in so startup needs no download. */
-  readonly extensionDirectory?: string | undefined;
+  readonly extensionDirectory?: string;
 }
 
 export type DuckRow = Record<string, JS>;
@@ -46,17 +46,23 @@ export class DuckDbClient {
 
   /** Runs one statement on a fresh connection; aborting `signal` interrupts it. */
   async query(sql: string, params: readonly DuckDBValue[], signal?: AbortSignal): Promise<DuckRow[]> {
-    signal?.throwIfAborted();
+    if (isAborted(signal)) {
+      throw new QueryAbortedError(signal?.reason);
+    }
     const connection = await this.instance.connect();
     const onAbort = (): void => {
       connection.interrupt();
     };
     signal?.addEventListener('abort', onAbort, { once: true });
     try {
+      // The abort event fires once; a signal that aborted while connecting would be missed.
+      if (isAborted(signal)) {
+        throw new QueryAbortedError(signal?.reason);
+      }
       const reader = await connection.runAndReadAll(sql, [...params]);
       return reader.getRowObjectsJS();
     } catch (error) {
-      if (signal?.aborted === true) {
+      if (isAborted(signal) && !(error instanceof QueryAbortedError)) {
         throw new QueryAbortedError(error);
       }
       throw error;
@@ -78,4 +84,9 @@ export class DuckDbClient {
   close(): void {
     this.instance.closeSync();
   }
+}
+
+/** Reads the flag through a call so the compiler does not narrow it across awaits. */
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
 }

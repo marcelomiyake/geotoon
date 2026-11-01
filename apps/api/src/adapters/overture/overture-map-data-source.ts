@@ -161,7 +161,7 @@ function num(value: unknown): number | null {
 function toRow(row: DuckRow): OvertureRow {
   const geometry = row['geometry'];
   return {
-    id: String(row['id']),
+    id: str(row['id']) ?? '',
     geometry: geometry instanceof Uint8Array ? geometry : new Uint8Array(),
     subtype: str(row['subtype']),
     class: str(row['class']),

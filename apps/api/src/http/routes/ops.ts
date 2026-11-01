@@ -21,7 +21,7 @@ export interface OpsRoutesOptions {
 
 /** Liveness, readiness and version. Readiness never calls Photon or S3. */
 export function registerOpsRoutes(app: FastifyInstance, options: OpsRoutesOptions): void {
-  app.get('/healthz', async () => ({ status: 'ok' }));
+  app.get('/healthz', () => ({ status: 'ok' }));
 
   app.get('/readyz', async (_request, reply) => {
     const report = await options.readiness();
@@ -30,5 +30,5 @@ export function registerOpsRoutes(app: FastifyInstance, options: OpsRoutesOption
     return report;
   });
 
-  app.get('/version', async () => options.version);
+  app.get('/version', () => options.version);
 }

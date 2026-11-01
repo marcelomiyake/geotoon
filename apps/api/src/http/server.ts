@@ -22,7 +22,7 @@ import { registerOpsRoutes, type ReadinessReport, type VersionInfo } from './rou
 export interface ServerOptions {
   readonly logger: FastifyBaseLogger;
   /** Built web client; omitted in API-only tests. */
-  readonly staticDir?: string | undefined;
+  readonly staticDir?: string;
   readonly requestArea: AreaRequester;
   readonly suggest: AddressSuggester;
   readonly radiusM: number;
@@ -142,7 +142,7 @@ export function toProblem(error: unknown, requestId: string): Problem {
 
 function statusOf(error: unknown): number | undefined {
   if (typeof error === 'object' && error !== null && 'statusCode' in error) {
-    const value = (error as { statusCode: unknown }).statusCode;
+    const value = error.statusCode;
     return typeof value === 'number' ? value : undefined;
   }
   return undefined;

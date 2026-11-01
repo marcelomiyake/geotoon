@@ -19,8 +19,8 @@
     "typecheck": "tsc -p packages/core && tsc -p packages/contracts && tsc -p apps/api && tsc -p apps/web",
     "lint": "eslint . && depcruise packages apps --config .dependency-cruiser.cjs",
     "test": "vitest run --coverage",
-    "test:unit": "vitest run --project unit",
-    "test:integration": "vitest run --project integration"
+    "test:unit": "vitest run --project core --project contracts --project api-unit --project web",
+    "test:integration": "vitest run --project api-integration"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
