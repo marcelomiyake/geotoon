@@ -226,7 +226,7 @@ owner approving each step.
 | Effort | `xhigh` on every turn |
 | Planning method | [Elephant-Goldfish Model](https://github.com/google/elephant-goldfish-model) (EGM) |
 | Elapsed time | about 6 hours (2026-11-01, 14:27 to 20:23 UTC) |
-| Initial cost | about **US$60** at Claude API list prices (table below) |
+| Initial cost | covered by a **Claude Pro plan (US$20/month)**, using two 5-hour usage windows; about US$60 if the same tokens were paid at Claude API prices (table below) |
 
 **Planning with EGM.** The `/egm-brainstorm` stage turned the owner's checklist into
 [concepts_brief.md](concepts_brief.md): the main session (the "elephant", which keeps the
@@ -238,7 +238,9 @@ the same way and approved by the owner. The elephant then implemented the design
 commit records its stage and agent in `EGM-Stage` and `EGM-Agent` footers, so
 `git log` shows which stage produced which files.
 
-**Cost.** Token counts come from the Claude Code transcripts of this project
+**API-price equivalent.** The subscription paid for the work; there was no per-token charge.
+To show what the same work would cost on the Claude API, the token counts come from the
+Claude Code transcripts of this project
 (`~/.claude/projects/-home-marcelomiyake-projects-geotoon/`, the main session and its
 subagents), counting each API response once (by message id and request id). Prices are the
 standard rates for Claude Opus 5.5 on the
@@ -261,5 +263,3 @@ standard rates for Claude Opus 5.5 on the
 - Not counted: the small helper-model calls Claude Code makes to summarise fetched web
   pages, which the transcripts do not record, and the work after the measurement
   (2026-11-01 20:23 UTC), such as this section's own pull request.
-- This is the API list-price equivalent. Usage under a Claude subscription is billed by
-  the plan, not per token.
