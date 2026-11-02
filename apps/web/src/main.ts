@@ -5,8 +5,9 @@ import { SceneRenderer } from './render/renderer.js';
 import { Minimap } from './render/minimap.js';
 import type { BuiltScene } from './scene/scene-builder.js';
 import { buildSceneInWorker } from './render/scene-loader.js';
-import { STREAM_RETRY_MS, areaAhead, canEnterArea, shouldRetarget, type AreaTarget } from './scene/area-streaming.js';
-import type { Point2 } from './scene/collision.js';
+import {
+  STREAM_RETRY_MS, areaAhead, canEnterArea, sampleMovement, shouldRetarget, type AreaTarget, type MovementSample,
+} from './scene/area-streaming.js';
 import { Overlays, areaErrorMessage } from './ui/overlays.js';
 import { SearchBox, type PickedPlace } from './ui/search-box.js';
 import { areaSearchParams, readUrlState } from './ui/search-logic.js';
@@ -30,8 +31,7 @@ let loadController: AbortController | undefined;
 let lastPlace: PickedPlace | undefined;
 let stream: { controller: AbortController; target: AreaTarget; started: number } | undefined;
 let streamRetryAt = 0;
-let previousWalk: Point2 | undefined;
-let travel: Point2 = { x: 0, z: 0 };
+let walkMovement: MovementSample | undefined;
 
 function hasWebGL2(): boolean {
   try {
@@ -128,8 +128,7 @@ async function openArea(place: PickedPlace): Promise<void> {
   stream?.controller.abort();
   stream = undefined;
   streamRetryAt = 0;
-  previousWalk = undefined;
-  travel = { x: 0, z: 0 };
+  walkMovement = undefined;
   overlays.setStreamStatus();
   loadController?.abort();
   const controller = new AbortController();
@@ -186,12 +185,8 @@ function maybeStream(renderer: SceneRenderer, time: number): void {
   const built = debug.built;
   if (built === undefined || lastPlace === undefined) return;
   const position = { x: renderer.camera.position.x, z: renderer.camera.position.z };
-  if (previousWalk !== undefined) {
-    const movement = { x: position.x - previousWalk.x, z: position.z - previousWalk.z };
-    if (Math.hypot(movement.x, movement.z) > 0.05) travel = movement;
-  }
-  previousWalk = position;
-  const target = areaAhead(position, travel, built.radiusM, built.projection);
+  walkMovement = sampleMovement(position, walkMovement);
+  const target = areaAhead(position, walkMovement.movement, built.radiusM, built.projection);
   if (target === undefined || time < streamRetryAt) return;
   if (stream !== undefined) {
     if (time - stream.started < 10_000 || !shouldRetarget(stream.target, target, built.projection, built.radiusM)) return;
@@ -226,7 +221,7 @@ async function loadAhead(target: AreaTarget, controller: AbortController, place:
     debug.requestId = ready.requestId;
     debug.sourceCalls = ready.sourceCalls;
     debug.tiles = `${ready.tiles.length}/${ready.tiles.length}`;
-    previousWalk = undefined;
+    walkMovement = undefined;
     overlays.setStreamStatus();
   } catch (error) {
     if (!controller.signal.aborted) {

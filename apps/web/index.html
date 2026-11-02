@@ -10,10 +10,11 @@
     <main id="app" data-screen="search">
       <div id="canvas-host" aria-hidden="true"></div>
       <aside id="minimap" aria-label="Minimap">
-        <canvas id="minimap-canvas" role="img"
-          aria-label="Nearby streets, buildings, parks and water. North is up. The yellow arrow shows your position and direction; the pink dot marks the searched address.">
+        <canvas id="minimap-canvas" aria-hidden="true">
           Minimap of the loaded area, centred on your position.
         </canvas>
+        <p class="sr-only">Nearby streets, buildings, parks and water. North is up.
+          The yellow arrow shows your position and direction; the pink dot marks the searched address.</p>
       </aside>
 
       <section class="panel screen-search" aria-labelledby="search-title">

@@ -691,8 +691,10 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
     map data is unavailable; normally the next window is ready well before this.
 *   **Background area loading.** `scene/area-streaming.ts` chooses a centre 1 km
     ahead of actual movement after the walker passes 300 m from the centre of a 2 km
-    window. Inward or stationary movement does not start work. One request runs at a
-    time; a substantial direction change may cancel and retarget after ten seconds.
+    window. Movement samples accumulate small steps across frames, keeping prefetch
+    independent of display refresh rate. Inward or stationary movement does not start
+    work. One request runs at a time; a substantial direction change may cancel and
+    retarget after ten seconds.
     The existing tile cache ingests only missing tiles. Failures retain the current
     world and retry after at least 15 seconds, respecting server retry hints. A stale
     response is adopted only if the walker lies comfortably inside its radius.

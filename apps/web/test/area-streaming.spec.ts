@@ -1,10 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import { areaAhead, canEnterArea, shouldRetarget } from '../src/scene/area-streaming.js';
+import { areaAhead, canEnterArea, sampleMovement, shouldRetarget, type AreaTarget, type MovementSample } from '../src/scene/area-streaming.js';
 import { createProjection } from '../src/scene/projection.js';
 
 const projection = createProjection(-23.56, -46.66);
 
 describe('directional background area loading', () => {
+  it.each([60, 120, 144, 240])('starts prefetching at normal walking speed on a %i FPS display', (fps) => {
+    let sample: MovementSample | undefined;
+    let target: AreaTarget | undefined;
+    let distance = 0;
+    const frameLimit = Math.ceil(301 * fps / 6);
+    for (let frame = 0; frame <= frameLimit && target === undefined; frame += 1) {
+      distance = frame * 6 / fps;
+      const position = { x: distance, z: 0 };
+      sample = sampleMovement(position, sample);
+      target = areaAhead(position, sample.movement, 2000, projection);
+    }
+    expect(target).toBeDefined();
+    expect(distance).toBeGreaterThanOrEqual(300);
+    expect(distance).toBeLessThan(300.2);
+    expect(projection.toLocal(target!.lon, target!.lat)[0]).toBeCloseTo(distance + 1000);
+  });
+
+  it('accumulates diagonal sub-threshold steps, retains the latest direction and resets on a new area', () => {
+    const start = sampleMovement({ x: 0, z: 0 });
+    const small = sampleMovement({ x: 0.02, z: -0.02 }, start);
+    expect(small.movement).toEqual({ x: 0, z: 0 });
+    const moved = sampleMovement({ x: 0.04, z: -0.04 }, small);
+    expect(moved.movement).toEqual({ x: 0.04, z: -0.04 });
+    expect(sampleMovement({ x: 0.04, z: -0.04 }, moved).movement).toEqual(moved.movement);
+    expect(sampleMovement({ x: 0, z: 0 }, moved).movement).toEqual({ x: -0.04, z: 0.04 });
+    expect(sampleMovement({ x: -1000, z: 0 }).movement).toEqual({ x: 0, z: 0 });
+  });
+
   it('starts early while travelling outward, but avoids stationary or inward requests', () => {
     expect(areaAhead({ x: 100, z: 0 }, { x: 1, z: 0 }, 2000, projection)).toBeUndefined();
     expect(areaAhead({ x: 400, z: 0 }, { x: 0, z: 0 }, 2000, projection)).toBeUndefined();

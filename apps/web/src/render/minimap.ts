@@ -26,9 +26,9 @@ export class Minimap {
     this.context = canvas.getContext('2d')!;
   }
 
-  setScene(scene: Scene, projection: Projection, radiusM: number, address: Point2 = { x: 0, z: 0 }): void {
+  setScene(scene: Scene, projection: Projection, radiusM: number, address?: Point2): void {
     this.radiusM = radiusM;
-    this.address = address;
+    this.address = address ?? { x: 0, z: 0 };
     this.map.width = MINIMAP_TEXTURE_SIZE;
     this.map.height = MINIMAP_TEXTURE_SIZE;
     paintMap(this.map.getContext('2d')!, buildMinimap(scene, projection, radiusM));
