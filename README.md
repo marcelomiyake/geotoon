@@ -20,8 +20,35 @@ by its signs. At street corners, two panels share a post and show the intersecti
 streets’ real names on both sides. Zebra crossings mark junction approaches, and larger
 junctions have traffic lights with alternating red, amber and green phases. Their
 positions are inferred from connected road geometry, rather than surveyed traffic data.
+Roadside signs follow the supplied Brazilian reference: stop/yield signs on suitable
+unsignalized approaches, crossing and traffic-light warnings, curve and junction warnings,
+school warnings near mapped schools, and blue service signs near mapped hospitals.
+They follow the curb, face incoming traffic, and avoid buildings and existing posts.
+These are illustrative placements, not surveyed regulations or a driving guide.
+Street details cover eligible junctions throughout the loaded area, so signs, signals
+and crossings continue to appear during long walks. Sign panels are batched by location
+and use shared texture pages to keep rendering efficient as you move.
 Other places keep the original building style and use neutral street-name panels.
 These are procedural visual profiles, not reconstructions of individual facades.
+Buildings mix six window styles with different spacing, proportions and frames, chosen
+consistently from their IDs, kinds and heights. Window rows follow each building's floor
+above the highest terrain corner, with solid wall below the first sill; buried foundations
+and raised building parts therefore keep windows clear of the ground.
+
+Each **12 real minutes covers 24 simulated hours**, starting at midday when the 3D
+view first opens. A visible sun moves across the sky with its shadows; a softly shaded
+moon and a stable field of stars appear at night. The sky, clouds, distant hills and fog
+fade through warm dusk, a cool blue night and dawn. A varied selection of building
+windows glows warmly at night, and lamps on the utility poles light the nearby streets; both fade
+off again at sunrise. Time continues while walking is paused and when changing address.
+This is a visual cycle, independent of the address’s actual local time or season.
+
+A circular **minimap in the top-left corner** follows you while you walk. It shows
+nearby streets, building footprints, parks and water with north at the top. The yellow
+arrow marks your position and heading, the pink dot marks the searched address when
+nearby, and a 100 m scale helps judge distances. Vivid green parks, blue water,
+terracotta buildings and white streets stay readable at night. The minimap uses the
+scene already loaded, with no extra map requests.
 
 Shared links preserve the style with `country=BR&city=São+Paulo` alongside `lat` and `lon`.
 Coordinates alone use the original style because they have no country/city metadata.
@@ -29,16 +56,30 @@ New country profiles and city overrides belong in `apps/web/src/scene/architectu
 they can change palettes, roof mix, window spacing/proportions and sign design without
 changing stored tiles or making additional map-source calls.
 
-![Street-level tour around Av. Paulista, 1578, São Paulo: paired corner signs, traffic lights, zebra crossings and geographical relief](docs/images/street-drive.gif)
+![Street-level tour around Av. Paulista, 1578, São Paulo: the vivid minimap, roadside warning signs, varied building windows, traffic lights and zebra crossings](docs/images/street-drive.gif)
 
-![Aerial orbit around Av. Paulista, 1578 — MASP, São Paulo: the cel-shaded city and its geographical relief](docs/images/aerial-orbit.gif)
+![Aerial orbit around Av. Paulista, 1578 — MASP, São Paulo: an accelerated day–night cycle with dusk, the moon, stars and dawn above the cel-shaded city](docs/images/aerial-orbit.gif)
 
-Recorded from the local Kind deployment with the São Paulo profile: a 10-second street
-tour and a 6-second aerial orbit. Ground overlays use a stable paint order to prevent
-street flicker where road ribbons overlap. Both animations retain map-data attribution.
+Recorded from the current local development build with the São Paulo profile: a
+12-second street tour and a 12-second aerial orbit. The aerial view plays the app's
+12-minute day–night cycle at **60× speed**, covering 24 simulated hours. Both animations
+show the vivid minimap and retain map-data attribution.
 
 The first visit to an area downloads its map data (about 80 s for 2 km); every later
 visit to the same area reads only from PostGIS.
+
+Walking now loads overlapping areas **in the background, ahead of your direction of
+travel**. Fetching starts about 300 m from the centre of a 2 km window; scene construction
+runs in a worker while you keep moving. The next window preserves your geographic
+position, view direction, searched-address marker and day–night clock. Only one 2 km
+window stays active, so long walks do not keep every old mesh in memory. A small status
+shows loading or retry progress; if the connection is too slow to finish in time, the
+walker waits safely on the loaded map until the next area is available.
+
+Unmeasured transportation footprints that cross a mapped vehicle street are not turned
+into solid building walls. This clears the underground Paulista/Consolação station
+footprints that obstructed the Túnel José Roberto Fanganiello Melhem crossing near
+Rua Bela Cintra; ordinary and measured buildings remain solid.
 
 The design, with the reasons behind each choice, is in
 [docs/designs/geotoon.md](docs/designs/geotoon.md). Rules for changing the code (layers,
@@ -221,7 +262,8 @@ acceleration turned on.
 
 ## Glossary
 
-- **Area**: the circle loaded around an address (2 km radius by default).
+- **Area**: the loaded circle (2 km radius by default), initially around the address
+  and then recentred ahead of the walker.
 - **Tile**: a zoom-16 map tile (about 560 m across at São Paulo). Map data is fetched and
   stored per tile, so overlapping areas share tiles.
 - **Tile coverage**: the row that says whether a tile is `missing`, `fetching`, `complete`
