@@ -5,7 +5,6 @@ import { hasSidewalks } from './street.js';
 
 const SNAP_M = 0.75;
 const SAME_DIRECTION_COS = Math.cos(Math.PI / 12);
-export const MAX_INTERSECTIONS = 128;
 
 export interface StreetArm {
   readonly name: string;
@@ -14,6 +13,8 @@ export interface StreetArm {
   /** Unit direction pointing away from the intersection. */
   readonly direction: Vec2;
   readonly lengthM: number;
+  /** Connected geometry away from the junction, used to place furniture on curved approaches. */
+  readonly path: readonly Vec2[];
 }
 
 export interface Intersection {
@@ -51,8 +52,7 @@ export function buildIntersections(lines: readonly SceneLine[], projection: Proj
   return nodes.map((node) => ({ ...node, arms: mergeArms(node.arms) }))
     .filter((node) => new Set(node.arms.map((arm) => arm.name).filter(Boolean)).size >= 2
       && node.arms.some((a) => node.arms.some((b) => Math.abs(dot(a.direction, b.direction)) < 0.9)))
-    .sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z) || a.x - b.x || a.z - b.z)
-    .slice(0, MAX_INTERSECTIONS);
+    .sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z) || a.x - b.x || a.z - b.z);
 }
 
 type MutableIntersection = { x: number; z: number; arms: StreetArm[] };
@@ -82,6 +82,7 @@ function streetArm(street: SceneLine, points: readonly Vec2[], index: number, st
   let direction: Vec2 | undefined;
   let lengthM = 0;
   let previous = origin;
+  const path: Vec2[] = [origin];
   for (let i = index + step; points[i] !== undefined && lengthM < 40; i += step) {
     const point = points[i]!;
     const length = Math.hypot(point[0] - previous[0], point[1] - previous[1]);
@@ -91,9 +92,10 @@ function streetArm(street: SceneLine, points: readonly Vec2[], index: number, st
     }
     lengthM += length;
     previous = point;
+    path.push(point);
   }
   return direction === undefined ? undefined : {
-    name: street.name?.trim() ?? '', kind: street.kind, widthM: street.widthM, direction, lengthM,
+    name: street.name?.trim() ?? '', kind: street.kind, widthM: street.widthM, direction, lengthM, path,
   };
 }
 

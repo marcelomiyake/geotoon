@@ -73,6 +73,12 @@ export class WalkControls {
     this.camera.rotation.set(0, -area.spawn.headingRad, 0, 'YXZ');
   }
 
+  /** Changes the loaded window while retaining pointer lock, movement keys and view direction. */
+  replaceArea(area: WalkArea, position: { x: number; z: number }): void {
+    this.area = area;
+    this.camera.position.set(position.x, area.terrain.heightAt(position.x, position.z) + EYE_HEIGHT_M, position.z);
+  }
+
   update(deltaSeconds: number): void {
     const area = this.area;
     if (area === undefined || !this.pointer.isLocked) {

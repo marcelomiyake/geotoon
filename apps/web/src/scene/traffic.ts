@@ -3,6 +3,7 @@ import { LAYER_HEIGHT_M } from './ground.js';
 import { dot, type Intersection, type StreetArm } from './intersections.js';
 import type { MeshBuffer } from './mesh-buffer.js';
 import { hexToRgb } from './palette.js';
+import { PointSpacing } from './point-spacing.js';
 import { addRibbon } from './ribbons.js';
 
 const SIGNAL_KINDS: ReadonlySet<string> = new Set(['primary', 'secondary', 'tertiary']);
@@ -27,10 +28,19 @@ export interface TrafficLight {
   readonly phase: 0 | 1;
 }
 
+export interface TrafficApproach {
+  readonly intersection: Intersection;
+  readonly arm: StreetArm;
+  readonly crossing: Crossing;
+  readonly light?: TrafficLight;
+}
+
 /** Illustrative intersection furniture; the source has no surveyed signal/crossing positions. */
 export function buildTraffic(intersections: readonly Intersection[], radiusM: number, collision: CollisionIndex) {
   const crossings: Crossing[] = [];
   const lights: TrafficLight[] = [];
+  const approaches: TrafficApproach[] = [];
+  const spacing = new PointSpacing(5);
   for (const node of intersections) {
     if (node.arms.length < 3) {
       continue;
@@ -38,17 +48,19 @@ export function buildTraffic(intersections: readonly Intersection[], radiusM: nu
     const main = node.arms.toSorted((a, b) => b.widthM - a.widthM)[0]!;
     for (const arm of node.arms) {
       const crossing = approachCrossing(node, arm);
-      if (crossing === undefined || !availableCrossing(crossing, crossings, radiusM)) {
+      if (crossing === undefined || !availableCrossing(crossing, spacing, radiusM)) {
         continue;
       }
       crossings.push(crossing);
+      spacing.add(crossing);
       const light = clearLight(node, arm, main, crossing, radiusM, collision);
       if (light !== undefined) {
         lights.push(light);
       }
+      approaches.push({ intersection: node, arm, crossing, ...(light === undefined ? {} : { light }) });
     }
   }
-  return { crossings, lights };
+  return { crossings, lights, approaches };
 }
 
 function clearLight(
@@ -63,9 +75,9 @@ function clearLight(
     ? light : undefined;
 }
 
-function availableCrossing(crossing: Crossing, existing: readonly Crossing[], radiusM: number): boolean {
+function availableCrossing(crossing: Crossing, spacing: PointSpacing, radiusM: number): boolean {
   return Math.hypot(crossing.x, crossing.z) + crossing.widthM / 2 <= radiusM
-    && existing.every((other) => Math.hypot(other.x - crossing.x, other.z - crossing.z) >= 5);
+    && spacing.isClear(crossing);
 }
 
 function approachCrossing(node: Intersection, arm: StreetArm): Crossing | undefined {

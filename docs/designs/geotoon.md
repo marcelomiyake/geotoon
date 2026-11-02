@@ -79,7 +79,8 @@ Each goal is a pass/fail check. G1 to G5 are the owner's done criteria.
     a passed quality gate.
 *   **G6. Walkable.** First-person walking with keyboard and mouse at 1.7 m
     eye height. The user cannot walk through buildings or past the edge of
-    the area, and starts outside a building, facing the address.
+    available map data, and starts outside a building, facing the address.
+    Overlapping areas load ahead during long walks.
 *   **G7. Largest feasible area.** The radius is the largest of 2 km, 1.5 km
     and 1 km that meets all of these on the PoC address:
     *   first load within 60 s;
@@ -100,8 +101,8 @@ Each goal is a pass/fail check. G1 to G5 are the owner's done criteria.
 *   Other building sources: no Overpass, Cesium OSM Buildings or Google imagery.
     SRTM elevation is now supported through Mapzen Terrain Tiles as described below.
 *   Phones, tablets and touch controls. Desktop browsers with WebGL2 only.
-*   Building interiors, multiplayer, navigation or route-finding, and a
-    day-night cycle.
+*   Building interiors, multiplayer, navigation or route-finding, and astronomical
+    simulation of the address's actual local time, latitude or season.
 *   Refreshing or expiring stored data, and database backups. PostGIS is a
     rebuildable cache of the sources.
 *   High availability: one API replica and one PostgreSQL instance.
@@ -154,7 +155,9 @@ Each goal is a pass/fail check. G1 to G5 are the owner's done criteria.
 *   **Then**:
     *   The camera moves at bicycle speed, at car speed with Shift.
     *   Building walls stop the camera.
-    *   At the edge of the area the camera stops and a message explains why.
+    *   Overlapping areas load ahead while walking, preserving position and heading.
+        If incoming data is late, the camera stops inside the available map and a
+        message shows loading or retry progress.
     *   Esc opens a pause screen with Resume, New address, Controls and
         Attribution.
 
@@ -515,12 +518,26 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
     still prevent unsuitable pitched roofs. These are artistic presentation defaults,
     not measured facade or roof facts. Other countries retain the original style.
 
+    `scene/facades.ts` chooses a stable window family from the building ID, kind and
+    height. Six shared presets vary slot width, window proportions, storey spacing and
+    single, paired or cross frames while adapting to the locality profile. Industrial
+    buildings use high clerestory windows; offices use wider or tall-pane families.
+    The scene builder anchors window rows to the highest footprint corner plus the
+    building part's minimum height. A separate per-vertex `facadeLayout` attribute
+    carries that floor datum, the preset index and a stable seed alongside the existing
+    wall slot coordinates. Floors use building-relative height, never world-height
+    modulo, so slopes and elevated parts cannot cut a window row through the ground.
+    Negative storeys and glass below the first sill are suppressed, including the
+    distant facade average. Building geometry, collisions and API contracts stay the
+    same; shared material presets preserve the existing building draw-call count.
+
     `scene/intersections.ts` groups connected surface-street vertices within 0.75 m,
     merges duplicate outgoing arms, and retains junctions with two distinct named
     streets and nonparallel arms. It does not intersect arbitrary lines, so an
     unconnected geometric crossing is not treated as a junction. Bends and same-name
-    splits do not acquire street signs. Work is bounded to the nearest 128 junctions
-    within the area. The source currently lacks grade-separation metadata, so shared
+    splits do not acquire street signs. Every eligible junction within the loaded
+    area is retained; a global nearest-junction cap would leave distant streets bare
+    during long walks. The source currently lacks grade-separation metadata, so shared
     geometry is an inference, not proof of an at-grade intersection.
 
     `scene/street-signs.ts` places one paired sign on a clear sidewalk corner of each
@@ -529,19 +546,57 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
     Corners outside the area, crowded corners and paths through building walls are
     omitted. Names come from `scene.lines`, including accents. Brazil uses blue/white
     panels, with a pale São Paulo footer; other places use neutral panels. No address
-    ranges or postal codes are invented. `render/street-signs.ts` uses one shared text
-    atlas for both readable faces and instanced posts. Scene replacement disposes the
-    atlas, geometry and materials. Reference photographs are not bundled as textures.
+    ranges or postal codes are invented. `render/street-signs.ts` shares lettering in
+    atlas pages of at most 64 names (1536 × 2048 pixels maximum), so arbitrarily many
+    street names do not exceed WebGL2's minimum texture-size support. Panels keep two
+    readable faces and are merged by atlas within 250 m spatial chunks; each chunk
+    has instanced posts and its own bounds for camera frustum culling. This keeps draw
+    calls low without omitting signs far from the searched address. Scene replacement
+    disposes all atlases, geometry and materials. Reference photographs are not bundled
+    as textures. Offline regression tests cover more than 128 junctions throughout a
+    2 km area, outer-corner signals/crossings/signs, atlas paging and chunk boundaries.
 
     `scene/traffic.ts` places 3 m zebra crossings across sufficiently long approaches
     at junctions with at least three arms. Signal poles sit on the incoming driver's
     right, behind the crossing, at junctions involving primary, secondary or tertiary
     roads. Buildings and area bounds constrain pole placement; closely spaced crossings
-    are deduplicated. These are illustrative inferred placements, not surveyed crossing
+    are deduplicated through neighbouring spatial cells, as are crowded sign posts,
+    avoiding scans across all previously placed details as area coverage grows.
+    These are illustrative inferred placements, not surveyed crossing
     locations or real signal timing. Opposing approaches share a 48 s cycle: 18 s green,
     3 s amber, 3 s all-red, then the other axis. Crossings are draped onto the same
     terrain planes as roads. Signals use four shared instanced meshes, and lamp colours
     update only on phase changes.
+
+    `scene/road-signs.ts` adds 13 roadside sign designs redrawn from the owner's
+    [Brazilian traffic-sign sheet](https://drive.google.com/file/d/1vL0KGUDrbUOhcjsEPG_3m1s07nWSfqtr/view).
+    Stop signs mark terminating or clearly lower-priority unsignalized approaches;
+    yield signs cover modest priority differences. Any existing signal at a junction
+    suppresses these priority signs. Other signs warn of existing crossings/signals,
+    T, Y and side junctions, and substantial standalone bends. School and hospital
+    signs require the corresponding mapped building kind. Placements follow the
+    approach polyline onto the driver's right curb, face incoming traffic, follow
+    terrain, respect the area radius and leave six metres between occupied posts.
+    Curve directions reverse correctly for the other approach. Speed limits, parking
+    restrictions and one-way rules are not inferred from geometry. Original vector
+    drawings share one texture atlas; metal backs and posts are batched in 250 m
+    chunks. The PDF itself is not bundled. These are illustrative decorations, not
+    surveyed signs or legal traffic instructions; offline tests cover all selection,
+    orientation, obstruction and distant-area rules.
+
+    **Transportation footprint fallback.** The cached Paulista/Consolação station
+    footprints (Overture IDs `4601001e-20df-4173-830d-924256e4a996` and
+    `bcea3df9-d9a5-46c6-9cd8-b7731d81d081`) cross vehicle streets near the Fanganiello
+    tunnel. Their source levels are −2/−5, but `is_underground` is false and no heights
+    are given. Synthesizing height from their large footprint areas created false
+    solid buildings across the road. The pure `surfaceBuildings` domain rule omits
+    an unmeasured transportation footprint when a vehicle street crosses its interior;
+    holes, tangencies, measured buildings and raised parts are retained. Scene assembly
+    and spawn selection use the same filtered buildings, so neither collisions nor
+    the minimap restore the false obstacle. The fix works with existing stored tiles
+    and is tested against a small recorded corridor fixture. Detailed tunnel/deck
+    profiles remain a separate geometry limitation; this rule does not invent heights
+    or remove ordinary buildings to make a route passable.
 *   **Scene builder** (pure TypeScript, tested in Node). It turns the
     contract into typed arrays:
     *   buildings: walls plus roofs triangulated with earcut, merged into
@@ -561,12 +616,68 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
     is kept only if it is faster.
 *   **Rendering.**
     *   Three.js `WebGLRenderer`, with the exact version pinned.
-    *   `MeshToonMaterial` with a 3-step gradient map.
+    *   `MeshToonMaterial` with a 2-step gradient map.
     *   `OutlineEffect` from `three/addons` for ink outlines.
-    *   A directional "sun" plus hemisphere light; no shadow maps.
-    *   Sky colour background, and fog from 150 m to 600 m.
+    *   A moving directional sun and ambient shade light, with crisp PCF cast shadows
+        in a 260 m square around the walker. The shadow map recentres after a 40 m
+        move and refreshes at most once a second while stationary to follow the sun.
+    *   A painted sky dome, toon clouds and distant hills; fog from 180 m to 700 m.
+        The dome shader draws a warm sun disc and halo along the lighting direction,
+        and a cool moon with subtle crater shading on the opposite side. Visibility
+        fades at the horizon and through twilight. `scene/stars.ts` generates 1000
+        deterministic points in the upper sky hemisphere once; their shared opacity
+        fades with darkness. Clouds, hills and scene geometry occlude the celestial
+        bodies and stars. These are stylised bodies, not actual astronomical positions
+        or lunar phases. Tests cover stable stars, sky visibility and cyclic continuity.
+    *   **Diurnal cycle:** `scene/diurnal-cycle.ts` samples a complete 24-hour cycle
+        every 720 elapsed seconds, starting at noon when the renderer is created.
+        A monotonic clock drives it independently of movement, frame count or area
+        loading, so pausing walking or changing address does not reset time, and a
+        hidden tab catches up when rendering resumes. Smooth elevation-based blends
+        change sun intensity/colour, ambient light, shade lift, sky, hills, clouds and
+        fog. Twilight warms the horizon; night retains enough cool ambient light to
+        walk. The cycle is visual and does not require coordinates, API changes or
+        additional map-source calls.
     *   Building facade GLSL paints windows/frames and roof trim using profile
         dimensions and per-wall window slots; it keeps the cel lighting and contours.
+        At dusk, a shared night-light uniform gradually adds warm emission only to
+        the glass mask. A stable seed varies occupied rooms and their brightness;
+        unlit rooms retain dark glass. Frames, walls and roofs do not emit window light.
+        The distant facade
+        average includes the same emission so small windows do not shimmer.
+    *   **Streetlights:** instanced arms, housings and lamp faces attach to existing
+        utility poles, extend toward the road and follow the pole's terrain height.
+        Their warm emission fades with the same night-light value as windows. A pool
+        of at most eight unshadowed point lights illuminates the closest lamps within
+        32 m of the camera; selection refreshes after a 2 m move, including elevation.
+        All distant lamp faces still glow. Reusing a fixed pool bounds the per-fragment
+        lighting work instead of adding a real light for every pole in the 2 km area.
+        Placements are procedural decoration, not surveyed lighting infrastructure.
+        Time, colour transitions, terrain-aware placement, nearby selection and lamp
+        activation are covered by offline tests; shader rendering is checked in WebGL.
+*   **Minimap.** A circular map with a navy rim and vivid colours sits in the top-left corner in
+    ready, walking and paused views, inspired by the owner's
+    [circular game-map reference](https://i.redd.it/ofumuie9cl0e1.jpg). North remains up;
+    the player stays centred and a yellow arrow turns with camera yaw, independently
+    of pitch. A pink dot marks the searched address when it lies inside the viewport.
+    Roads, paths, railways, building footprints, parks and water come from the same
+    validated scene and local projection as the 3D view. Polygon holes are preserved.
+    A 400 m-wide view and a 100 m scale remain constant while walking. The dashed
+    loaded-area boundary and darker outside region explain the map's extent near
+    the edge. Green parks, blue water, terracotta footprints and white streets remain
+    distinct in daylight and darkness. A cool frame and light inner ring keep the
+    map clear against the 3D scene.
+
+    `scene/minimap.ts` owns pure projection, layer selection, crop and heading logic,
+    tested offline against synthetic geometry and the recorded scene. `render/minimap.ts`
+    paints a single 2048 × 2048 cached area image per load, then crops it into a small
+    Canvas 2D overlay at up to 20 Hz only when position, heading or display size changes.
+    It does not render the 3D world a second time, add dependencies or request map data.
+    Loading another area replaces the cache. CSS adapts its size to the window, keeps
+    it clear of the debug panel (now top-right), and gives dialogs priority. The
+    minimap does not intercept pointer or keyboard input. Its canvas has an accessible
+    description and hides on search, loading and error screens. Visual browser checks
+    cover movement, turning, area changes, clipping, resizing and overlay visibility.
 *   **Controls.**
     *   `PointerLockControls`, started from a "Click to walk" overlay.
     *   Movement keys read by `KeyboardEvent.code` (W A S D or the arrow
@@ -576,8 +687,31 @@ CREATE INDEX map_feature_geom_gix ON map_feature USING gist (geom);
     *   Esc opens the pause screen.
     *   Keys are ignored while a text field has focus.
 *   **Collision.** A 0.3 m circle against footprint edges, sliding along
-    walls. The camera stops 2 m inside the radius and a message explains
-    why.
+    walls. The camera stays 2 m inside the currently available radius if incoming
+    map data is unavailable; normally the next window is ready well before this.
+*   **Background area loading.** `scene/area-streaming.ts` chooses a centre 1 km
+    ahead of actual movement after the walker passes 300 m from the centre of a 2 km
+    window. Movement samples accumulate small steps across frames, keeping prefetch
+    independent of display refresh rate. Inward or stationary movement does not start
+    work. One request runs at a time; a substantial direction change may cancel and
+    retarget after ten seconds.
+    The existing tile cache ingests only missing tiles. Failures retain the current
+    world and retry after at least 15 seconds, respecting server retry hints. A stale
+    response is adopted only if the walker lies comfortably inside its radius.
+
+    Native module workers construct the next scene. `scene-transfer.ts` transfers
+    geometry buffers without copying them, then restores projection, terrain and
+    collision methods on the main thread. Cancelled work terminates its worker.
+    Replacing a window converts the camera through geographic coordinates and retains
+    pointer lock, pressed keys, quaternion and the renderer's diurnal epoch. The
+    original searched address stays the marker's anchor, while the active area's
+    projection, terrain, minimap and debug coordinates update together. Old geometry
+    and textures are disposed, keeping memory bounded to one active window plus work
+    in progress. Initial scene construction uses the same worker. A small status
+    reports progress without replacing the walking screen; data outages may still
+    require waiting on the last available map. Offline tests cover direction policy,
+    long-distance recentring and transferable geometry; browser checks cover worker
+    construction, cancellation and continuous camera/time state.
 *   **Diagnostics.** `?debug=1` shows the request ID, tile states, feature
     counts, triangle count, frame time and camera lat/lon. Messages are
     distinct for "geocoder unavailable", "no match", "no data here" and
@@ -888,7 +1022,8 @@ The owner kept the draft's version of each of these items from
 *   **Refresh and eviction**: a time-to-live per tile, using the stored
     release and fetch time.
 *   **Touch controls** for phones and tablets.
-*   **Shadows and a day-night cycle** with toon-stepped shadow maps.
+*   **Astronomical lighting** tied to the address's local time, latitude and season;
+    the visual 12-minute diurnal cycle and moving cast shadows are already implemented.
 
 --------------------------------------------------------------------------------
 
@@ -1597,7 +1732,8 @@ relative to the repository root.
         colours per area kind and line kind.
     *   **`extrude`:** walls as one quad per ring edge with outward normals;
         roofs triangulated with earcut, holes supported. Output is
-        position, normal and colour arrays.
+        position, normal, colour and optional facade/layout arrays. Layout stores the
+        building's floor datum, window preset and seed without adding separate meshes.
     *   **`ribbons`:** each line becomes a strip of `widthM` with mitred
         joins. Miters are limited to 2× the width.
     *   **`ground`:** area polygons triangulated with earcut at fixed
@@ -1618,12 +1754,13 @@ relative to the repository root.
 *   **Proposed Changes**:
     *   **`renderer.ts`:**
         *   `WebGLRenderer` with antialiasing.
-        *   `MeshToonMaterial` with vertex colours and a 3-step gradient
+        *   `MeshToonMaterial` with vertex colours and a 2-step gradient
             `DataTexture` (`NearestFilter`).
         *   `OutlineEffect` with thickness 0.004 and black outlines.
-        *   A `DirectionalLight` from the north-west at 45°, and a
-            `HemisphereLight`.
-        *   Fog from 150 m to 600 m, and a sky colour background.
+        *   A moving `DirectionalLight` and ambient shade light, with cast shadows
+            and a 720-second diurnal cycle, as described under Rendering above.
+        *   Fog from 180 m to 700 m and a painted sky backdrop, changing through dusk,
+            night and dawn; warm emissive windows and instanced streetlights at night.
         *   An `InstancedMesh` for trees (cone plus cylinder).
         *   An address marker sprite.
         *   Handling of `webglcontextlost`.

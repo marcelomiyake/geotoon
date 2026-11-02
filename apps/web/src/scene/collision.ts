@@ -25,6 +25,21 @@ export class CollisionIndex {
     return this.edgeCount;
   }
 
+  /** Transfer each wall once when scene geometry is built in a worker. */
+  toSegments(): Float64Array {
+    const edges = new Set<Edge>();
+    for (const cell of this.cells.values()) cell.forEach((edge) => edges.add(edge));
+    return new Float64Array([...edges].flat());
+  }
+
+  static fromSegments(segments: Float64Array): CollisionIndex {
+    const collision = new CollisionIndex();
+    for (let i = 0; i < segments.length; i += 4) {
+      collision.addEdge(segments[i]!, segments[i + 1]!, segments[i + 2]!, segments[i + 3]!);
+    }
+    return collision;
+  }
+
   addEdge(ax: number, az: number, bx: number, bz: number): void {
     const edge: Edge = [ax, az, bx, bz];
     this.edgeCount += 1;

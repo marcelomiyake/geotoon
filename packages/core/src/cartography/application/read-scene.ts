@@ -5,6 +5,7 @@ import { multiPolygonAreaM2, sampleLine } from '../domain/geometry.js';
 import { estimateHeight } from '../domain/height-rule.js';
 import type { Scene, SceneBuilding } from '../domain/scene.js';
 import { chooseSpawn } from '../domain/spawn-point.js';
+import { surfaceBuildings } from '../domain/surface-buildings.js';
 import type { FeatureReader, TerrainReader } from './ports.js';
 
 /** Spacing of trees along a mapped tree row, in metres. */
@@ -19,7 +20,8 @@ export class ReadScene {
       this.reader.readWithin(centre, radiusM),
       this.terrainReader?.readWithin(centre, radiusM),
     ]);
-    const buildings: SceneBuilding[] = stored.buildings.map((building) => {
+    const surface = surfaceBuildings(stored.buildings, stored.lines);
+    const buildings: SceneBuilding[] = surface.map((building) => {
       const height = estimateHeight({
         id: building.id,
         footprintAreaM2: multiPolygonAreaM2(building.footprint),
@@ -43,7 +45,7 @@ export class ReadScene {
       lines: stored.lines.map((line) => ({ ...line, widthM: LINE_WIDTH_M[line.kind] })),
       areas: stored.areas,
       trees: stored.trees.flatMap(treePositions),
-      spawn: chooseSpawn(centre, stored.lines, stored.buildings),
+      spawn: chooseSpawn(centre, stored.lines, surface),
       attribution: attributionFor(terrain === undefined ? stored.datasets : [...stored.datasets, 'SRTM terrain']),
       ...(terrain === undefined ? {} : { terrain }),
     };

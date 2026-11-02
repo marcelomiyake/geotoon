@@ -1,46 +1,68 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { BuiltScene } from '../scene/scene-builder.js';
 import {
-  SIGN_CENTRE_Y_M, SIGN_HEIGHT_M, SIGN_WIDTH_M, streetSignDesign, streetSignText,
+  SIGN_CENTRE_Y_M, SIGN_HEIGHT_M, SIGN_WIDTH_M, type StreetSign,
+  streetSignAtlasPages, streetSignChunks, streetSignDesign, streetSignText,
 } from '../scene/street-signs.js';
 
 const CELL_WIDTH = 384;
 const CELL_HEIGHT = 128;
 const COLUMNS = 4;
 
-/** A single shared text atlas; each panel has two readable faces and a metal post. */
+type Lettering = { geometry: THREE.PlaneGeometry; material: THREE.MeshBasicMaterial };
+
+/** Paged lettering and spatially merged panels cover the whole area with few draw calls. */
 export function createStreetSigns(built: BuiltScene, postMaterial: THREE.Material): THREE.Group {
   const group = new THREE.Group();
   if (built.streetSigns.length === 0) {
     return group;
   }
-  const names = [...new Set(built.streetSigns.flatMap((sign) => sign.panels.map((panel) => panel.name)))];
-  const atlas = signAtlas(names, built);
-  const panelMaterial = new THREE.MeshBasicMaterial({ map: atlas });
-  panelMaterial.userData['outlineParameters'] = { visible: false };
+  const lettering = new Map<string, Lettering>();
+  for (const names of streetSignAtlasPages(built.streetSigns)) {
+    const material = new THREE.MeshBasicMaterial({ map: signAtlas(names, built) });
+    material.userData['outlineParameters'] = { visible: false };
+    names.forEach((name, index) => lettering.set(name, { material, geometry: panelGeometry(index, names.length) }));
+  }
   const postGeometry = new THREE.CylinderGeometry(0.045, 0.055, SIGN_CENTRE_Y_M + SIGN_HEIGHT_M / 2, 6)
     .translate(0, (SIGN_CENTRE_Y_M + SIGN_HEIGHT_M / 2) / 2, 0);
-  const posts = new THREE.InstancedMesh(postGeometry, postMaterial, built.streetSigns.length);
-  const matrix = new THREE.Matrix4();
-  const panels = new Map(names.map((name, index) => [name, panelGeometry(index, names.length)]));
-  built.streetSigns.forEach((sign, index) => {
+  for (const signs of streetSignChunks(built.streetSigns)) {
+    group.add(signChunk(signs, built, lettering, postGeometry, postMaterial));
+  }
+  lettering.forEach((letter) => letter.geometry.dispose());
+  return group;
+}
+
+function signChunk(
+  signs: readonly StreetSign[], built: BuiltScene, lettering: ReadonlyMap<string, Lettering>,
+  postGeometry: THREE.BufferGeometry, postMaterial: THREE.Material,
+): THREE.Group {
+  const group = new THREE.Group();
+  const posts = new THREE.InstancedMesh(postGeometry, postMaterial, signs.length);
+  const faces = new Map<THREE.MeshBasicMaterial, THREE.BufferGeometry[]>();
+  const base = new THREE.Matrix4();
+  const local = new THREE.Matrix4();
+  const world = new THREE.Matrix4();
+  signs.forEach((sign, index) => {
     const groundY = built.terrain.heightAt(sign.x, sign.z);
-    matrix.makeTranslation(sign.x, groundY, sign.z);
-    posts.setMatrixAt(index, matrix);
+    posts.setMatrixAt(index, base.makeTranslation(sign.x, groundY, sign.z));
     for (const spec of sign.panels) {
-      const panel = new THREE.Group();
-      panel.position.set(sign.x, groundY + SIGN_CENTRE_Y_M, sign.z);
-      panel.rotation.y = -spec.angle;
-      const geometry = panels.get(spec.name)!;
-      const front = new THREE.Mesh(geometry, panelMaterial);
-      const back = new THREE.Mesh(geometry, panelMaterial);
-      front.position.set(SIGN_WIDTH_M / 2, 0, 0.025);
-      back.position.set(SIGN_WIDTH_M / 2, 0, -0.025);
-      back.rotation.y = Math.PI;
-      panel.add(front, back);
-      group.add(panel);
+      const letter = lettering.get(spec.name)!;
+      const geometries = faces.get(letter.material) ?? [];
+      base.makeRotationY(-spec.angle).setPosition(sign.x, groundY + SIGN_CENTRE_Y_M, sign.z);
+      for (const side of [0, 1]) {
+        local.makeRotationY(side * Math.PI).setPosition(SIGN_WIDTH_M / 2, 0, side === 0 ? 0.025 : -0.025);
+        geometries.push(letter.geometry.clone().applyMatrix4(world.multiplyMatrices(base, local)));
+      }
+      faces.set(letter.material, geometries);
     }
   });
+  for (const [material, geometries] of faces) {
+    const geometry = mergeGeometries(geometries);
+    geometries.forEach((face) => face.dispose());
+    geometry.computeBoundingSphere();
+    group.add(new THREE.Mesh(geometry, material));
+  }
   posts.computeBoundingSphere();
   group.add(posts);
   return group;

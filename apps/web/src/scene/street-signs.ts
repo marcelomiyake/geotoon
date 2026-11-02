@@ -1,9 +1,12 @@
 import type { ArchitectureStyle } from './architecture.js';
 import { CollisionIndex } from './collision.js';
 import type { Intersection, StreetArm } from './intersections.js';
+import { PointSpacing } from './point-spacing.js';
 import { SIDEWALK_WIDTH_M } from './street.js';
 
-export const MAX_STREET_SIGNS = 128;
+/** Each atlas fits within WebGL2's minimum supported 2048-pixel texture size. */
+export const SIGN_ATLAS_NAMES = 64;
+export const SIGN_CHUNK_SIZE_M = 250;
 export const SIGN_WIDTH_M = 1.8;
 export const SIGN_HEIGHT_M = 0.56;
 export const SIGN_CENTRE_Y_M = 2.65;
@@ -25,6 +28,7 @@ export function buildStreetSigns(
   intersections: readonly Intersection[], radiusM: number, collision = new CollisionIndex(),
 ): StreetSign[] {
   const signs: StreetSign[] = [];
+  const spacing = new PointSpacing(12);
   for (const intersection of intersections) {
     const corners = intersection.arms.flatMap((arm, i, arms) => {
       const other = arms[(i + 1) % arms.length]!;
@@ -32,15 +36,35 @@ export function buildStreetSigns(
       return corner === undefined ? [] : [corner];
     }).sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z));
     const clear = corners.find((corner) => clearCorner(intersection, corner, radiusM, collision)
-      && signs.every((sign) => Math.hypot(sign.x - corner.x, sign.z - corner.z) >= 12));
+      && spacing.isClear(corner));
     if (clear !== undefined) {
       signs.push(clear);
-    }
-    if (signs.length === MAX_STREET_SIGNS) {
-      break;
+      spacing.add(clear);
     }
   }
   return signs;
+}
+
+/** Spatial batches let the camera cull distant panels and posts as the walker moves. */
+export function streetSignChunks(signs: readonly StreetSign[]): StreetSign[][] {
+  const chunks = new Map<string, StreetSign[]>();
+  for (const sign of signs) {
+    const key = `${Math.floor(sign.x / SIGN_CHUNK_SIZE_M)}:${Math.floor(sign.z / SIGN_CHUNK_SIZE_M)}`;
+    const chunk = chunks.get(key) ?? [];
+    chunk.push(sign);
+    chunks.set(key, chunk);
+  }
+  return [...chunks.values()];
+}
+
+/** Pages share lettering across chunks without exceeding the texture limit or dropping names. */
+export function streetSignAtlasPages(signs: readonly StreetSign[]): string[][] {
+  const names = [...new Set(signs.flatMap((sign) => sign.panels.map((panel) => panel.name)))];
+  const pages: string[][] = [];
+  for (let index = 0; index < names.length; index += SIGN_ATLAS_NAMES) {
+    pages.push(names.slice(index, index + SIGN_ATLAS_NAMES));
+  }
+  return pages;
 }
 
 function signAtCorner(node: Intersection, a: StreetArm, b: StreetArm): StreetSign | undefined {

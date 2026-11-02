@@ -1,6 +1,7 @@
 import type { Locality, Scene } from '@geotoon/contracts';
 import { type ArchitectureStyle, architectureFor, buildingAppearance } from './architecture.js';
 import { CollisionIndex } from './collision.js';
+import { buildingFacade, windowStyles } from './facades.js';
 import { type LocalPolygon, extrudePrism, normalisePolygon } from './extrude.js';
 import { GROUND_LAYERS, type GroundLayer, LAYER_HEIGHT_M, addArea, addGroundDisc, layerForArea } from './ground.js';
 import { MeshBuffer, type MeshData, type Vec2 } from './mesh-buffer.js';
@@ -25,6 +26,7 @@ import { type StreetSign, buildStreetSigns } from './street-signs.js';
 import { Terrain } from './terrain.js';
 import { buildIntersections } from './intersections.js';
 import { type TrafficLight, addCrossings, buildTraffic } from './traffic.js';
+import { type RoadSign, buildRoadSigns } from './road-signs.js';
 
 /** The ground disc reaches this far past the area radius. */
 export const GROUND_MARGIN_M = 50;
@@ -33,10 +35,12 @@ const GROUND_SEGMENTS = 96;
 export const CHUNK_SIZE_M = 250;
 
 export interface BuiltScene {
+  readonly address: { readonly x: number; readonly z: number };
   readonly terrain: Terrain;
   readonly architecture: ArchitectureStyle;
   readonly streetSigns: readonly StreetSign[];
   readonly trafficLights: readonly TrafficLight[];
+  readonly roadSigns: readonly RoadSign[];
   readonly projection: Projection;
   readonly radiusM: number;
   /** One mesh per non-empty chunk. */
@@ -62,6 +66,7 @@ export interface SceneStats {
   readonly poles: number;
   readonly streetSigns: number;
   readonly trafficLights: number;
+  readonly roadSigns: number;
   readonly crossings: number;
   readonly wireSegments: number;
   readonly triangles: number;
@@ -75,6 +80,7 @@ export interface SceneArea {
   readonly lon: number;
   readonly radiusM: number;
   readonly locality?: Locality;
+  readonly address?: { readonly lat: number; readonly lon: number };
 }
 
 /** Turns the wire scene into typed arrays per material, a collision index and stats. */
@@ -91,6 +97,9 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
   const intersections = buildIntersections(scene.lines, projection, area.radiusM);
   const streetSigns = buildStreetSigns(intersections, area.radiusM, collision);
   const traffic = buildTraffic(intersections, area.radiusM, collision);
+  const roadSigns = buildRoadSigns({ intersections, approaches: traffic.approaches, lines: scene.lines,
+    buildings: scene.buildings, projection, radiusM: area.radiusM, collision,
+    occupied: [...streetSigns, ...traffic.lights] });
 
   const ground = Object.fromEntries(GROUND_LAYERS.map((layer) => [layer, new MeshBuffer()])) as Record<
     GroundLayer,
@@ -112,6 +121,7 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
 
   const trees = buildTrees(scene.trees.map(([lon, lat]) => projection.toLocal(lon, lat)));
   const [spawnX, spawnZ] = projection.toLocal(scene.spawn.lon, scene.spawn.lat);
+  const [addressX, addressZ] = area.address === undefined ? [0, 0] : projection.toLocal(area.address.lon, area.address.lat);
 
   const buildings = [...chunks.values()].map((chunk) => chunk.mesh.toMeshData()).filter((m) => m.triangles > 0);
   const buildingEdges = [...chunks.values()]
@@ -127,10 +137,12 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
     0,
   );
   return {
+    address: { x: addressX, z: addressZ },
     terrain,
     architecture,
     streetSigns,
     trafficLights: traffic.lights,
+    roadSigns,
     projection,
     radiusM: area.radiusM,
     buildings,
@@ -149,6 +161,7 @@ export function buildScene(scene: Scene, area: SceneArea, now: () => number = ()
       poles: poles.length / 3,
       streetSigns: streetSigns.length,
       trafficLights: traffic.lights.length,
+      roadSigns: roadSigns.length,
       crossings: traffic.crossings.length,
       wireSegments: wires.length / 6,
       triangles,
@@ -170,6 +183,7 @@ function addBuildings(
   terrain: Terrain,
 ): Map<string, BuildingChunk> {
   const chunks = new Map<string, BuildingChunk>();
+  const facades = windowStyles(architecture.facade);
   for (const building of buildings) {
     const polygons = building.footprint.map(project);
     const anchor = polygons[0]?.[0]?.[0];
@@ -183,6 +197,7 @@ function addBuildings(
       chunks.set(key, chunk);
     }
     const { colours, pitched } = buildingAppearance(building, architecture);
+    const facade = buildingFacade(building);
     const heights = polygons.flat(2).map(([x, z]) => terrain.heightAt(x, z));
     const low = heights.reduce((a, b) => Math.min(a, b), Number.POSITIVE_INFINITY);
     const high = heights.reduce((a, b) => Math.max(a, b), Number.NEGATIVE_INFINITY);
@@ -193,7 +208,8 @@ function addBuildings(
         topY: high + building.heightM,
         wallColour: colours.wall,
         roofColour: colours.roof,
-        windowSlotM: architecture.facade.slotM,
+        windowSlotM: facades[facade.variant]!.slotM,
+        facadeLayout: [high + building.minHeightM, facade.variant, facade.seed],
         ...(pitched ? { tileColour: colours.tile } : {}),
       },
       chunk.mesh,

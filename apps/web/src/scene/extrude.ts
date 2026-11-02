@@ -15,6 +15,8 @@ export interface Prism {
   /** When set, small rectangular low buildings get a pitched roof in this colour. */
   readonly tileColour?: Rgb;
   readonly windowSlotM?: number;
+  /** Window floor datum, style index and seed; the datum can sit above a buried foundation. */
+  readonly facadeLayout?: Vec3;
 }
 
 /** Cleans a polygon: outer ring counter-clockwise from above, holes clockwise. */
@@ -81,6 +83,7 @@ function pitchedRoofCorners(prism: Prism, rings: readonly Vec2[][]): ReturnType<
 function addWalls(ring: readonly Vec2[], prism: Prism, out: MeshBuffer): void {
   const { baseY: y0, topY: y1, wallColour: colour } = prism;
   const height = y1 - y0;
+  const layout: Vec3 = prism.facadeLayout ?? [y0, 0, 0];
   for (let i = 0; i < ring.length; i += 1) {
     const p = ring[i]!;
     const q = ring[(i + 1) % ring.length]!;
@@ -102,8 +105,8 @@ function addWalls(ring: readonly Vec2[], prism: Prism, out: MeshBuffer): void {
     const fq0: Vec3 = [slots, height, slotWidth];
     const fq1: Vec3 = [slots, 0, slotWidth];
     const fp1: Vec3 = [0, 0, slotWidth];
-    out.triangle(p0, q0, q1, normal, colour, [fp0, fq0, fq1]);
-    out.triangle(p0, q1, p1, normal, colour, [fp0, fq1, fp1]);
+    out.triangle(p0, q0, q1, normal, colour, [fp0, fq0, fq1], layout);
+    out.triangle(p0, q1, p1, normal, colour, [fp0, fq1, fp1], layout);
   }
 }
 

@@ -11,6 +11,7 @@ export type Ring = readonly Vec2[];
  */
 export const NO_FACADE: Vec3 = [0, -1, 0];
 const NO_FACADES: readonly [Vec3, Vec3, Vec3] = [NO_FACADE, NO_FACADE, NO_FACADE];
+const DEFAULT_FACADE_LAYOUT: Vec3 = [0, 0, 0];
 
 /** Non-indexed triangle soup with flat normals and per-vertex colours. */
 export interface MeshData {
@@ -19,6 +20,8 @@ export interface MeshData {
   readonly colors: Float32Array;
   /** Facade coordinates (3 floats per vertex); only on buffers created with `facade: true`. */
   readonly facade?: Float32Array;
+  /** Per vertex: building floor datum, window-style index and a stable lighting seed. */
+  readonly facadeLayout?: Float32Array;
   readonly triangles: number;
 }
 
@@ -28,9 +31,11 @@ export class MeshBuffer {
   private readonly normals: number[] = [];
   private readonly colors: number[] = [];
   private readonly facade: number[] | undefined;
+  private readonly facadeLayout: number[] | undefined;
 
   constructor(options?: { readonly facade?: boolean }) {
     this.facade = options?.facade === true ? [] : undefined;
+    this.facadeLayout = options?.facade === true ? [] : undefined;
   }
 
   get triangles(): number {
@@ -38,11 +43,12 @@ export class MeshBuffer {
   }
 
   /** Adds one triangle; the vertex order must already be counter-clockwise seen from the normal. */
-  triangle(a: Vec3, b: Vec3, c: Vec3, normal: Vec3, colour: Rgb, facade = NO_FACADES): void {
+  triangle(a: Vec3, b: Vec3, c: Vec3, normal: Vec3, colour: Rgb, facade = NO_FACADES, layout: Vec3 = DEFAULT_FACADE_LAYOUT): void {
     this.positions.push(...a, ...b, ...c);
     this.normals.push(...normal, ...normal, ...normal);
     this.colors.push(...colour, ...colour, ...colour);
     this.facade?.push(...facade[0], ...facade[1], ...facade[2]);
+    this.facadeLayout?.push(...layout, ...layout, ...layout);
   }
 
   /**
@@ -75,6 +81,7 @@ export class MeshBuffer {
       normals: new Float32Array(this.normals),
       colors: new Float32Array(this.colors),
       ...(this.facade === undefined ? {} : { facade: new Float32Array(this.facade) }),
+      ...(this.facadeLayout === undefined ? {} : { facadeLayout: new Float32Array(this.facadeLayout) }),
       triangles: this.triangles,
     };
   }
