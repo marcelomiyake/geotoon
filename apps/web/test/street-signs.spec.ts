@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { architectureFor } from '../src/scene/architecture.js';
 import { CollisionIndex } from '../src/scene/collision.js';
 import { buildIntersections, type Intersection } from '../src/scene/intersections.js';
-import { MAX_STREET_SIGNS, buildStreetSigns, streetSignDesign, streetSignText } from '../src/scene/street-signs.js';
+import {
+  SIGN_ATLAS_NAMES, SIGN_CHUNK_SIZE_M, buildStreetSigns,
+  streetSignAtlasPages, streetSignChunks, streetSignDesign, streetSignText,
+} from '../src/scene/street-signs.js';
 import { junctionRoads, projection, road } from './street-fixture.js';
 
 const nodes = buildIntersections(junctionRoads(), projection, 250);
@@ -48,12 +51,38 @@ describe('street-name sign placement', () => {
     }
   });
 
-  it('deduplicates crowded corner posts and bounds the number of signs', () => {
+  it('deduplicates crowded corner posts without dropping distant signs', () => {
     const base = nodes[0]!;
     expect(buildStreetSigns([base, { ...base, x: 1 }], 250)).toHaveLength(1);
     const many: Intersection[] = Array.from({ length: 160 }, (_, i) => ({ ...base, x: i * 30 }));
-    expect(buildStreetSigns(many, 5000)).toHaveLength(MAX_STREET_SIGNS);
-    expect(buildStreetSigns(many, 5000).at(-1)!.x).toBeLessThan(4000);
+    expect(buildStreetSigns(many, 5000)).toHaveLength(160);
+    expect(buildStreetSigns(many, 5000).at(-1)!.x).toBeGreaterThan(4700);
+  });
+});
+
+describe('street-sign rendering batches', () => {
+  const base = buildStreetSigns(nodes, 250)[0]!;
+
+  it('groups every sign spatially, including negative coordinates and chunk boundaries', () => {
+    const signs = [-251, -250, -1, 0, 249, 250, 1500].map((x) => ({ ...base, x, z: 10 }));
+    const chunks = streetSignChunks(signs);
+    expect(chunks.map((chunk) => chunk.map((sign) => sign.x))).toEqual([[-251], [-250, -1], [0, 249], [250], [1500]]);
+    expect(chunks.flat()).toEqual(signs);
+    expect(streetSignChunks([{ ...base, x: 0, z: -SIGN_CHUNK_SIZE_M }, { ...base, x: 0, z: 0 }])).toHaveLength(2);
+    expect(streetSignChunks([])).toEqual([]);
+  });
+
+  it('pages all unique names into bounded atlases and shares repeated lettering', () => {
+    const signs = Array.from({ length: 160 }, (_, i) => ({ ...base,
+      panels: [{ name: `Rua ${i}`, angle: 0 }, { name: 'Avenida Paulista', angle: Math.PI / 2 }] as const }));
+    const pages = streetSignAtlasPages(signs);
+    const names = pages.flat();
+    expect(pages.map((page) => page.length)).toEqual([SIGN_ATLAS_NAMES, SIGN_ATLAS_NAMES, 33]);
+    expect(names).toHaveLength(161);
+    expect(new Set(names).size).toBe(161);
+    expect(names).toContain('Rua 159');
+    expect(streetSignAtlasPages(signs.slice(0, 1))).toEqual([['Rua 0', 'Avenida Paulista']]);
+    expect(streetSignAtlasPages([])).toEqual([]);
   });
 });
 

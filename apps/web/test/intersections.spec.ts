@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_INTERSECTIONS, buildIntersections } from '../src/scene/intersections.js';
+import { buildIntersections } from '../src/scene/intersections.js';
 import { junctionRoads, projection, road } from './street-fixture.js';
 
 describe('connected street intersections', () => {
@@ -47,12 +47,14 @@ describe('connected street intersections', () => {
     expect(buildIntersections([duplicate, b, a], projection, 250)).toEqual(nodes);
   });
 
-  it('bounds work to the area and the nearest 128 junctions', () => {
+  it('keeps distant junctions throughout the loaded area while respecting the radius', () => {
     const lines = Array.from({ length: 160 }, (_, i) => [
       road([[i * 30, 0], [i * 30 + 10, 0]], `Rua ${i}`),
       road([[i * 30, 0], [i * 30, 10]], `Alameda ${i}`),
     ]).flat();
-    expect(buildIntersections(lines, projection, 5000)).toHaveLength(MAX_INTERSECTIONS);
+    const nodes = buildIntersections(lines, projection, 5000);
+    expect(nodes).toHaveLength(160);
+    expect(nodes.at(-1)!.x).toBeCloseTo(4770);
     expect(buildIntersections(lines, projection, 15)).toHaveLength(1);
   });
 });

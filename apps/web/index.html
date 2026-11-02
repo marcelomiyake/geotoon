@@ -9,6 +9,12 @@
   <body>
     <main id="app" data-screen="search">
       <div id="canvas-host" aria-hidden="true"></div>
+      <aside id="minimap" aria-label="Minimap">
+        <canvas id="minimap-canvas" role="img"
+          aria-label="Nearby streets, buildings, parks and water. North is up. The yellow arrow shows your position and direction; the pink dot marks the searched address.">
+          Minimap of the loaded area, centred on your position.
+        </canvas>
+      </aside>
 
       <section class="panel screen-search" aria-labelledby="search-title">
         <h1 id="search-title">GeoToon</h1>
@@ -61,6 +67,7 @@
       </section>
 
       <p id="edge-notice" hidden>You reached the edge of the loaded area.</p>
+      <p id="stream-notice" aria-live="polite" hidden></p>
       <div class="crosshair" aria-hidden="true"></div>
       <p id="corner-attribution"></p>
       <pre id="debug-panel" hidden></pre>

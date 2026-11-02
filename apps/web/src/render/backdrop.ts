@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import type { DiurnalState } from '../scene/diurnal-cycle.js';
+import { buildStars } from '../scene/stars.js';
 import {
   CLOUD_SHADE_COLOUR,
   MOUNTAIN_COLOUR,
@@ -23,16 +25,41 @@ type OutlineUserData = {
 export class Backdrop {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(70, 1, 1, SKY_RADIUS_M * 1.1);
+  private readonly dome = sky();
+  private readonly stars = stars();
+  private readonly mountains: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[];
+  private readonly sun = new THREE.DirectionalLight(0xffffff, Math.PI * 0.75);
+  private readonly ambient = new THREE.AmbientLight(CLOUD_SHADE_COLOUR, Math.PI);
+  private readonly cloud: THREE.Mesh<THREE.BufferGeometry, THREE.MeshToonMaterial>;
 
-  constructor(gradient: THREE.Texture, sunDirection: THREE.Vector3) {
-    this.scene.add(sky());
-    this.scene.add(hills(3200, 70, 150, 11, new THREE.Color(MOUNTAIN_COLOUR).lerp(new THREE.Color(SKY_HORIZON_COLOUR), 0.45)));
-    this.scene.add(hills(2600, 35, 80, 23, new THREE.Color(MOUNTAIN_COLOUR)));
-    this.scene.add(clouds(gradient));
-    const sun = new THREE.DirectionalLight(0xffffff, Math.PI * 0.75);
-    sun.position.copy(sunDirection);
-    const shade = new THREE.Color(CLOUD_SHADE_COLOUR);
-    this.scene.add(sun, new THREE.AmbientLight(shade, Math.PI));
+  constructor(gradient: THREE.Texture) {
+    this.mountains = [
+      hills(3200, 70, 150, 11, new THREE.Color(MOUNTAIN_COLOUR).lerp(new THREE.Color(SKY_HORIZON_COLOUR), 0.45)),
+      hills(2600, 35, 80, 23, new THREE.Color(MOUNTAIN_COLOUR)),
+    ];
+    this.cloud = clouds(gradient);
+    this.scene.add(this.dome, this.stars, ...this.mountains, this.cloud, this.sun, this.ambient);
+  }
+
+  update(cycle: DiurnalState): void {
+    (this.dome.material.uniforms['zenith']!.value as THREE.Color).setRGB(...cycle.skyZenith, THREE.LinearSRGBColorSpace);
+    (this.dome.material.uniforms['horizon']!.value as THREE.Color).setRGB(...cycle.skyHorizon, THREE.LinearSRGBColorSpace);
+    (this.dome.material.uniforms['sunDirection']!.value as THREE.Vector3).set(...cycle.sunDirection);
+    (this.dome.material.uniforms['moonDirection']!.value as THREE.Vector3).set(...cycle.moonDirection);
+    this.dome.material.uniforms['sunVisibility']!.value = cycle.sunVisibility;
+    this.dome.material.uniforms['moonVisibility']!.value = cycle.moonVisibility;
+    this.stars.material.uniforms['visibility']!.value = cycle.starVisibility;
+    (this.stars.material.uniforms['moonDirection']!.value as THREE.Vector3).set(...cycle.moonDirection);
+    this.stars.material.uniforms['moonVisibility']!.value = cycle.moonVisibility;
+    this.sun.position.set(...cycle.sunDirection);
+    this.sun.intensity = cycle.sunIntensity * 0.75;
+    this.sun.color.setRGB(...cycle.sunColour, THREE.LinearSRGBColorSpace);
+    this.ambient.color.setRGB(...cycle.ambientColour, THREE.LinearSRGBColorSpace);
+    for (const mountain of this.mountains) {
+      mountain.material.color.setRGB(...cycle.landscapeTint, THREE.LinearSRGBColorSpace);
+    }
+    const outline = this.cloud.material.userData as OutlineUserData;
+    outline.outlineParameters!.color = cycle.skyHorizon.map((value) => value * 0.7);
   }
 
   /** Copies the walker's view direction and lens. */
@@ -47,11 +74,15 @@ export class Backdrop {
 }
 
 /** A dome with a cyan zenith fading to a pale horizon; below the horizon stays pale. */
-function sky(): THREE.Mesh {
+function sky(): THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial> {
   const material = new THREE.ShaderMaterial({
     uniforms: {
       zenith: { value: new THREE.Color(SKY_ZENITH_COLOUR) },
       horizon: { value: new THREE.Color(SKY_HORIZON_COLOUR) },
+      sunDirection: { value: new THREE.Vector3() },
+      moonDirection: { value: new THREE.Vector3() },
+      sunVisibility: { value: 0 },
+      moonVisibility: { value: 0 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vDirection;
@@ -62,10 +93,32 @@ function sky(): THREE.Mesh {
     fragmentShader: /* glsl */ `
       uniform vec3 zenith;
       uniform vec3 horizon;
+      uniform vec3 sunDirection;
+      uniform vec3 moonDirection;
+      uniform float sunVisibility;
+      uniform float moonVisibility;
       varying vec3 vDirection;
       void main() {
-        float height = clamp(normalize(vDirection).y, 0.0, 1.0);
-        gl_FragColor = vec4(mix(horizon, zenith, pow(height, 0.5)), 1.0);
+        vec3 direction = normalize(vDirection);
+        float height = clamp(direction.y, 0.0, 1.0);
+        vec3 colour = mix(horizon, zenith, pow(height, 0.5));
+        float sunDot = dot(direction, sunDirection);
+        float sunDisc = smoothstep(cos(0.024), cos(0.021), sunDot) * sunVisibility;
+        vec3 sunColour = mix(vec3(1.0, 0.35, 0.08), vec3(1.0, 0.93, 0.61), clamp(sunDirection.y * 3.0, 0.0, 1.0));
+        colour += sunColour * pow(max(sunDot, 0.0), 600.0) * 0.2 * sunVisibility;
+        colour = mix(colour, sunColour, sunDisc);
+        float moonDot = dot(direction, moonDirection);
+        float moonDisc = smoothstep(cos(0.026), cos(0.023), moonDot) * moonVisibility;
+        vec3 right = normalize(cross(vec3(0.0, 1.0, 0.0), moonDirection));
+        vec3 up = cross(moonDirection, right);
+        vec2 moonUV = vec2(dot(direction, right), dot(direction, up)) / 0.024;
+        float craters = (1.0 - smoothstep(0.15, 0.24, length(moonUV - vec2(-0.3, 0.25))))
+          + (1.0 - smoothstep(0.1, 0.18, length(moonUV - vec2(0.35, -0.25))))
+          + (1.0 - smoothstep(0.08, 0.15, length(moonUV - vec2(-0.1, -0.45))));
+        vec3 moonColour = vec3(0.78, 0.85, 0.98) * (0.92 + 0.08 * moonUV.x - craters * 0.17);
+        colour += vec3(0.3, 0.4, 0.65) * pow(max(moonDot, 0.0), 700.0) * 0.08 * moonVisibility;
+        colour = mix(colour, moonColour, moonDisc);
+        gl_FragColor = vec4(colour, 1.0);
         #include <colorspace_fragment>
       }`,
     side: THREE.BackSide,
@@ -77,8 +130,45 @@ function sky(): THREE.Mesh {
   return dome;
 }
 
+/** Round star points sit behind clouds and hills; only their opacity changes with time. */
+function stars(): THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> {
+  const field = buildStars();
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(field.positions, 3));
+  geometry.setAttribute('brightness', new THREE.BufferAttribute(field.brightness, 1));
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      visibility: { value: 0 },
+      moonDirection: { value: new THREE.Vector3() },
+      moonVisibility: { value: 0 },
+    },
+    vertexShader: /* glsl */ `
+      attribute float brightness;
+      uniform vec3 moonDirection;
+      uniform float moonVisibility;
+      varying float vBrightness;
+      void main() {
+        float covered = smoothstep(cos(0.028), cos(0.026), dot(normalize(position), moonDirection)) * moonVisibility;
+        vBrightness = brightness * (1.0 - covered);
+        gl_PointSize = 1.2 + brightness * 2.0;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float visibility;
+      varying float vBrightness;
+      void main() {
+        float point = 1.0 - smoothstep(0.1, 0.5, length(gl_PointCoord - 0.5));
+        gl_FragColor = vec4(vec3(0.78, 0.86, 1.0), point * vBrightness * visibility);
+        #include <colorspace_fragment>
+      }`,
+    transparent: true,
+    depthWrite: false,
+  });
+  return new THREE.Points(geometry, material);
+}
+
 /** A ring of rolling hills on the horizon, hazy at the foot. */
-function hills(distance: number, minHeight: number, maxHeight: number, seed: number, colour: THREE.Color): THREE.Mesh {
+function hills(distance: number, minHeight: number, maxHeight: number, seed: number, colour: THREE.Color): THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> {
   const random = mulberry32(seed);
   const phases = [random(), random(), random()].map((r) => r * Math.PI * 2);
   const haze = new THREE.Color(SKY_HORIZON_COLOUR);
@@ -112,7 +202,7 @@ function hills(distance: number, minHeight: number, maxHeight: number, seed: num
 }
 
 /** Puffy cumulus with flat bases: clusters of spheres, toon-shaded with a soft blue outline. */
-function clouds(gradient: THREE.Texture): THREE.Mesh {
+function clouds(gradient: THREE.Texture): THREE.Mesh<THREE.BufferGeometry, THREE.MeshToonMaterial> {
   const random = mulberry32(CLOUD_SEED);
   const puffs: THREE.BufferGeometry[] = [];
   for (let c = 0; c < CLOUD_COUNT; c += 1) {

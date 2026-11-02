@@ -47,7 +47,7 @@ export default defineConfig({
       include: ['packages/*/src/**/*.ts', 'apps/*/src/**/*.ts'],
       // Same list and reasons as sonar.coverage.exclusions in sonar-project.properties.
       exclude: [
-        'apps/web/src/render/**', // draws to WebGL; checked in the browser, not in Node
+        'apps/web/src/render/**', // draws to Canvas/WebGL; checked in the browser, not in Node
         'apps/web/src/main.ts', // browser entry point: DOM and WebGL wiring only
         'apps/web/src/ui/search-box.ts', // DOM widget; its logic lives in search-logic.ts
         'apps/web/src/ui/overlays.ts', // DOM-only views

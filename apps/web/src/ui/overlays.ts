@@ -24,6 +24,7 @@ export class Overlays {
   private readonly errorText = byId<HTMLElement>('error-text');
   private readonly errorDetail = byId<HTMLElement>('error-detail');
   private readonly edgeNotice = byId<HTMLElement>('edge-notice');
+  private readonly streamNotice = byId<HTMLElement>('stream-notice');
   private readonly cornerAttribution = byId<HTMLElement>('corner-attribution');
   private readonly attributionLists = document.querySelectorAll<HTMLElement>('.attribution-list');
   private readonly placeLabel = byId<HTMLElement>('place-label');
@@ -76,6 +77,11 @@ export class Overlays {
     this.edgeTimer = setTimeout(() => {
       this.edgeNotice.hidden = true;
     }, 2500);
+  }
+
+  setStreamStatus(message = ''): void {
+    this.streamNotice.hidden = message.length === 0;
+    if (this.streamNotice.textContent !== message) this.streamNotice.textContent = message;
   }
 
   setAttribution(credits: readonly Attribution[]): void {

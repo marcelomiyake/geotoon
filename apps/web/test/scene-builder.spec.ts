@@ -19,9 +19,29 @@ import {
 } from '../src/scene/palette.js';
 import { GROUND_MARGIN_M, buildScene } from '../src/scene/scene-builder.js';
 import { WIRES, WIRE_SEGMENTS } from '../src/scene/street.js';
+import { junctionGrid } from './street-fixture.js';
 
 // Recorded by the G2 integration test from the Overture fixture (radius 250 m).
 const ready = AreaReadySchema.parse(recorded);
+
+it('keeps signs, signals and pedestrian crossings after long walks in every direction', () => {
+  const built = buildScene({ buildings: [], lines: junctionGrid(), areas: [], trees: [],
+    spawn: { lat: 0, lon: 0, headingDeg: 0 }, attribution: [] }, { lat: 0, lon: 0, radiusM: 2000 });
+  expect(built.streetSigns).toHaveLength(225);
+  expect(built.trafficLights).toHaveLength(900);
+  expect(built.stats.crossings).toBe(900);
+  expect(built.stats.streetSigns).toBe(225);
+  expect(built.roadSigns).toHaveLength(1800);
+  expect(built.stats.roadSigns).toBe(built.roadSigns.length);
+  expect(built.ground.markings.triangles).toBeGreaterThanOrEqual(9000);
+  for (const x of [-1120, 1120]) {
+    for (const z of [-1120, 1120]) {
+      expect(built.streetSigns.some((sign) => Math.hypot(sign.x - x, sign.z - z) < 10)).toBe(true);
+      expect(built.trafficLights.filter((light) => Math.hypot(light.x - x, light.z - z) < 20)).toHaveLength(4);
+      expect(built.roadSigns.filter((sign) => Math.hypot(sign.x - x, sign.z - z) < 35)).toHaveLength(8);
+    }
+  }
+});
 
 describe('buildScene on the recorded PoC payload', () => {
   const built = buildScene(ready.scene, ready.area);

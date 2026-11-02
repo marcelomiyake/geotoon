@@ -5,6 +5,8 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { FacadeStyle } from '../scene/architecture.js';
+import { diurnalState } from '../scene/diurnal-cycle.js';
+import { windowStyles } from '../scene/facades.js';
 import { GROUND_LAYERS } from '../scene/ground.js';
 import type { MeshData } from '../scene/mesh-buffer.js';
 import {
@@ -13,12 +15,10 @@ import {
   GLASS_COLOUR,
   GLASS_HIGHLIGHT_COLOUR,
   INK_COLOUR,
-  LIT_TINT,
   MARKER_COLOUR,
   POLE_COLOUR,
   type Rgb,
   SHADE_LIFT,
-  SHADOW_TINT,
   SKY_HORIZON_COLOUR,
   TRIM_COLOUR,
   TRUNK_COLOUR,
@@ -26,8 +26,10 @@ import {
 import type { BuiltScene } from '../scene/scene-builder.js';
 import { CROSSARM_Y_M, POLE_HEIGHT_M } from '../scene/street.js';
 import { Backdrop } from './backdrop.js';
-import { FACADE_FRAGMENT, FACADE_FRAGMENT_PARS, FACADE_VERTEX, FACADE_VERTEX_PARS } from './facade-shader.js';
+import { FACADE_EMISSION, FACADE_FRAGMENT, FACADE_FRAGMENT_PARS, FACADE_VERTEX, FACADE_VERTEX_PARS } from './facade-shader.js';
 import { createStreetSigns } from './street-signs.js';
+import { createRoadSigns } from './road-signs.js';
+import { StreetLights } from './street-lights.js';
 import { TrafficLights } from './traffic-lights.js';
 
 export const EYE_HEIGHT_M = 1.7;
@@ -42,13 +44,11 @@ const WIRE_WIDTH_PX = 1.2;
 const CEL_STEPS = [0, 255];
 const MARKER_HEIGHT_M = 24;
 
-/** Toward the sun: high in the north-west (the sun is to the north in São Paulo). */
-const SUN_DIRECTION = new THREE.Vector3(-0.45, 1.05, -0.62).normalize();
 const SUN_DISTANCE_M = 400;
 /** Cast shadows cover a square this many metres either side of the walker. */
 const SHADOW_HALF_M = 130;
 const SHADOW_MAP_PX = 4096;
-/** The shadow map is redrawn only when the walker has moved this far. */
+/** The shadow map follows movement and refreshes once a second as the sun moves. */
 const SHADOW_RECENTRE_M = 40;
 
 type OutlineUserData = { outlineParameters?: { visible?: boolean; thickness?: number } };
@@ -62,6 +62,13 @@ export class SceneRenderer {
   private readonly gradient: THREE.DataTexture;
   private readonly backdrop: Backdrop;
   private readonly sun: THREE.DirectionalLight;
+  private readonly ambient = new THREE.AmbientLight(0xffffff, Math.PI);
+  private readonly cycleStarted = performance.now() / 1000;
+  private readonly sunDirection = new THREE.Vector3();
+  private readonly nightLights = { value: 0 };
+  private toonMaterials: THREE.MeshToonMaterial[] = [];
+  private streetLights: StreetLights | undefined;
+  private lastShadowUpdate = Number.NEGATIVE_INFINITY;
   private shadowCentre: THREE.Vector2 | undefined;
   private content = new THREE.Group();
   private lineMaterials: LineMaterial[] = [];
@@ -95,14 +102,10 @@ export class SceneRenderer {
     this.gradient.magFilter = THREE.NearestFilter;
     this.gradient.generateMipmaps = false;
     this.gradient.needsUpdate = true;
-    this.backdrop = new Backdrop(this.gradient, SUN_DIRECTION);
+    this.backdrop = new Backdrop(this.gradient);
 
     this.scene.fog = new THREE.Fog(SKY_HORIZON_COLOUR, FOG_NEAR_M, FOG_FAR_M);
-    // Lit faces get LIT_TINT and faces in shade get SHADOW_TINT (BRDF_Lambert divides by pi).
-    this.sun = new THREE.DirectionalLight(
-      linearColour([LIT_TINT[0] - SHADOW_TINT[0], LIT_TINT[1] - SHADOW_TINT[1], LIT_TINT[2] - SHADOW_TINT[2]]),
-      Math.PI,
-    );
+    this.sun = new THREE.DirectionalLight(0xffffff, Math.PI);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(SHADOW_MAP_PX, SHADOW_MAP_PX);
     Object.assign(this.sun.shadow.camera, {
@@ -118,7 +121,7 @@ export class SceneRenderer {
     this.sun.shadow.normalBias = 0.05;
     // A tight filter keeps shadow edges crisp, like painted shadows.
     this.sun.shadow.radius = 0.5;
-    this.scene.add(this.sun, this.sun.target, new THREE.AmbientLight(linearColour(SHADOW_TINT), Math.PI));
+    this.scene.add(this.sun, this.sun.target, this.ambient);
     this.scene.add(this.content);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -137,8 +140,12 @@ export class SceneRenderer {
     for (const chunk of built.buildings) {
       group.add(this.mesh(chunk, buildingMaterial, true));
     }
-    group.add(...this.lines(built.buildingEdges, CONTOUR_WIDTH_PX));
-    group.add(...this.lines(built.wires.length > 0 ? [built.wires] : [], WIRE_WIDTH_PX));
+    for (const contour of this.lines(built.buildingEdges, CONTOUR_WIDTH_PX)) {
+      group.add(contour);
+    }
+    for (const wire of this.lines(built.wires.length > 0 ? [built.wires] : [], WIRE_WIDTH_PX)) {
+      group.add(wire);
+    }
     GROUND_LAYERS.forEach((layer, index) => {
       const data = built.ground[layer];
       if (data.triangles === 0) {
@@ -158,11 +165,22 @@ export class SceneRenderer {
       mesh.renderOrder = index;
       group.add(mesh);
     });
-    group.add(...this.trees(built), ...this.poles(built), this.marker());
+    for (const object of [...this.trees(built), ...this.poles(built)]) group.add(object);
+    if (Math.hypot(built.address.x, built.address.z) < built.radiusM) group.add(this.marker(built));
+    this.streetLights = undefined;
+    if (built.poles.count > 0) {
+      this.streetLights = new StreetLights(built, this.toonMaterial({ color: POLE_COLOUR }));
+      group.add(this.streetLights.group);
+    }
     if (built.streetSigns.length > 0) {
       const signPostMaterial = this.toonMaterial({ color: 0x8f999f });
       hideOutline(signPostMaterial);
       group.add(createStreetSigns(built, signPostMaterial));
+    }
+    if (built.roadSigns.length > 0) {
+      const poleMaterial = this.toonMaterial({ color: 0x71808c });
+      hideOutline(poleMaterial);
+      group.add(createRoadSigns(built, poleMaterial));
     }
     this.trafficLights = undefined;
     if (built.trafficLights.length > 0) {
@@ -177,8 +195,20 @@ export class SceneRenderer {
   }
 
   render(seconds = performance.now() / 1000): void {
+    const cycle = diurnalState(seconds - this.cycleStarted);
+    this.nightLights.value = cycle.nightLights;
+    this.sunDirection.set(...cycle.sunDirection);
+    this.sun.color.setRGB(...cycle.sunColour, THREE.LinearSRGBColorSpace);
+    this.sun.intensity = cycle.sunIntensity;
+    this.ambient.color.setRGB(...cycle.ambientColour, THREE.LinearSRGBColorSpace);
+    for (const material of this.toonMaterials) {
+      material.emissive.setRGB(...cycle.shadeLift, THREE.LinearSRGBColorSpace);
+    }
+    this.scene.fog?.color.setRGB(...cycle.skyHorizon, THREE.LinearSRGBColorSpace);
+    this.backdrop.update(cycle);
+    this.streetLights?.update(cycle.nightLights, this.camera.position);
     this.trafficLights?.update(seconds);
-    this.followWithShadows();
+    this.followWithShadows(seconds);
     this.backdrop.follow(this.camera);
     this.renderer.clear();
     this.effect.render(this.backdrop.scene, this.backdrop.camera);
@@ -194,15 +224,20 @@ export class SceneRenderer {
     return this.renderer.info.render.triangles;
   }
 
-  /** Keeps the shadow-casting box around the walker, redrawing the shadow map only on a move. */
-  private followWithShadows(): void {
-    const { x, z } = this.camera.position;
-    if (this.shadowCentre !== undefined && Math.hypot(x - this.shadowCentre.x, z - this.shadowCentre.y) < SHADOW_RECENTRE_M) {
+  /** Keeps cast shadows around the walker and follows the sun without redrawing every frame. */
+  private followWithShadows(seconds: number): void {
+    if (this.sun.intensity === 0) {
       return;
     }
+    const { x, z } = this.camera.position;
+    if (this.shadowCentre !== undefined && Math.hypot(x - this.shadowCentre.x, z - this.shadowCentre.y) < SHADOW_RECENTRE_M
+      && seconds - this.lastShadowUpdate < 1) {
+      return;
+    }
+    this.lastShadowUpdate = seconds;
     this.shadowCentre = new THREE.Vector2(Math.round(x), Math.round(z));
     this.sun.target.position.set(this.shadowCentre.x, this.camera.position.y, this.shadowCentre.y);
-    this.sun.position.copy(this.sun.target.position).addScaledVector(SUN_DIRECTION, SUN_DISTANCE_M);
+    this.sun.position.copy(this.sun.target.position).addScaledVector(this.sunDirection, SUN_DISTANCE_M);
     this.sun.target.updateMatrixWorld();
     this.sun.updateMatrixWorld();
     this.renderer.shadowMap.needsUpdate = true;
@@ -218,11 +253,13 @@ export class SceneRenderer {
   }
 
   private toonMaterial(parameters: THREE.MeshToonMaterialParameters): THREE.MeshToonMaterial {
-    return new THREE.MeshToonMaterial({
+    const material = new THREE.MeshToonMaterial({
       gradientMap: this.gradient,
       emissive: linearColour(SHADE_LIFT),
       ...parameters,
     });
+    this.toonMaterials.push(material);
+    return material;
   }
 
   /**
@@ -231,6 +268,7 @@ export class SceneRenderer {
    * their edges always win the depth test.
    */
   private facadeMaterial(facade: FacadeStyle): THREE.MeshToonMaterial {
+    const styles = windowStyles(facade);
     const material = this.toonMaterial({
       vertexColors: true,
       polygonOffset: true,
@@ -243,11 +281,11 @@ export class SceneRenderer {
       frameColour: { value: linearColour(FRAME_COLOUR) },
       trimColour: { value: linearColour(TRIM_COLOUR) },
       inkColour: { value: new THREE.Color(INK_COLOUR) },
-      storeyM: { value: facade.storeyM },
-      sillM: { value: facade.sillM },
-      headM: { value: facade.headM },
-      halfWindowM: { value: facade.halfWindowM },
-      frameM: { value: facade.frameM },
+      windowLightColour: { value: new THREE.Color(0xffd18a) },
+      nightLights: this.nightLights,
+      windowDimensions: { value: styles.map((style) =>
+        new THREE.Vector4(style.storeyM, style.sillM, style.headM, style.halfWindowM)) },
+      windowFrames: { value: styles.map((style) => new THREE.Vector2(style.frameM, style.mullion)) },
     };
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
@@ -256,7 +294,8 @@ export class SceneRenderer {
         .replace('#include <begin_vertex>', `#include <begin_vertex>\n${FACADE_VERTEX}`);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${FACADE_FRAGMENT_PARS}`)
-        .replace('#include <color_fragment>', `#include <color_fragment>\n${FACADE_FRAGMENT}`);
+        .replace('#include <color_fragment>', `#include <color_fragment>\n${FACADE_FRAGMENT}`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${FACADE_EMISSION}`);
     };
     material.customProgramCacheKey = () => 'geotoon-facade';
     return material;
@@ -269,6 +308,9 @@ export class SceneRenderer {
     geometry.setAttribute('color', new THREE.BufferAttribute(data.colors, 3));
     if (data.facade !== undefined) {
       geometry.setAttribute('facade', new THREE.BufferAttribute(data.facade, 3));
+    }
+    if (data.facadeLayout !== undefined) {
+      geometry.setAttribute('facadeLayout', new THREE.BufferAttribute(data.facadeLayout, 3));
     }
     geometry.computeBoundingSphere();
     const mesh = new THREE.Mesh(geometry, material);
@@ -358,8 +400,8 @@ export class SceneRenderer {
     return [poles];
   }
 
-  /** A pin at the searched address (the area centre), tall enough to show above most roofs. */
-  private marker(): THREE.Object3D {
+  /** A pin at the original searched address, tall enough to show above most roofs. */
+  private marker(built: BuiltScene): THREE.Object3D {
     const material = this.toonMaterial({ color: MARKER_COLOUR });
     const pole = new THREE.Mesh(
       new THREE.CylinderGeometry(0.15, 0.15, MARKER_HEIGHT_M, 8).translate(0, MARKER_HEIGHT_M / 2, 0),
@@ -371,6 +413,7 @@ export class SceneRenderer {
     );
     const marker = new THREE.Group();
     marker.add(pole, head);
+    marker.position.set(built.address.x, built.terrain.heightAt(built.address.x, built.address.z), built.address.z);
     return marker;
   }
 
@@ -396,6 +439,7 @@ export class SceneRenderer {
     materials.forEach((material) => material.dispose());
     textures.forEach((texture) => texture.dispose());
     this.lineMaterials = [];
+    this.toonMaterials = [];
     this.content = new THREE.Group();
   }
 }

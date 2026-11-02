@@ -18,6 +18,12 @@ fixtures/photon/
 fixtures/scene/
   A scene payload produced by GeoToon from the Overture fixture above; the same
   attribution applies.
+  paulista-underpass.json contains the two transportation footprints and nearby
+  named streets from the local Overture 2026-10-21.0 cache around the Túnel José
+  Roberto Fanganiello Melhem / Avenida Paulista / Rua Bela Cintra crossing.
+  The footprints correspond to OpenStreetMap ways 817292043 and 817292044.
+  It is an offline regression for incorrectly extruded underground station shapes;
+  the same OpenStreetMap/Overture attribution applies.
 
 fixtures/terrain/srtm-12-1517-2323.png
   Mapzen Terrain Tiles, Terrarium raster at zoom 12, tile 1517/2323, downloaded

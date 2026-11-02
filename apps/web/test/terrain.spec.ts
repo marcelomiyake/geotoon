@@ -83,9 +83,17 @@ describe('terrain surfaces', () => {
     expect(Math.max(...heights)).toBeCloseTo(44);
     expect(built.collision.size).toBe(4);
     expect(built.terrain.heightAt(0, 0)).toBe(0);
+    const mesh = built.buildings[0]!;
+    for (let at = 0; at < mesh.facade!.length; at += 3) {
+      if (mesh.facade![at + 1]! >= 0) {
+        // Windows start above the highest corner, even where foundations extend downhill.
+        expect(mesh.facadeLayout![at]).toBeCloseTo(32);
+      }
+    }
     expect(new Set([...built.ground.base.positions].filter((_, i) => i % 3 === 1)).size).toBeGreaterThan(1);
     const raised = buildScene({ ...scene, buildings: [{ ...scene.buildings[0]!, minHeightM: 3 }] }, { lat: 0, lon: 0, radiusM: 100 });
     expect(Math.min(...[...raised.buildings[0]!.positions].filter((_, i) => i % 3 === 1))).toBeCloseTo(35);
+    expect(raised.buildings[0]!.facadeLayout![0]).toBeCloseTo(35);
   });
 
   it('hangs sagging wires between pole tops at their respective terrain heights', () => {
