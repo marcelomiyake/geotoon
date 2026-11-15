@@ -12,7 +12,7 @@
     "apps/web"
   ],
   "engines": {
-    "node": ">=26"
+    "node": ">=26.13.1"
   },
   "scripts": {
     "build": "tsc -b tsconfig.build.json && npm run build -w @geotoon/web",
@@ -26,14 +26,18 @@
     "@eslint/js": "10.0.1",
     "@testcontainers/postgresql": "12.2.1",
     "@types/node": "26.6.6",
-    "@vitest/coverage-v8": "5.0.5",
+    "@vitest/coverage-v8": "5.1.0",
     "dependency-cruiser": "18.7.0",
-    "eslint": "10.14.0",
+    "eslint": "10.15.0",
     "eslint-plugin-sonarjs": "4.2.2",
     "globals": "17.14.0",
     "testcontainers": "12.2.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1",
-    "vitest": "5.0.5"
+    "vitest": "5.1.0"
+  },
+  "overrides": {
+    "minimatch": "^11.0.8",
+    "glob": "^14.0.6"
   }
 }
